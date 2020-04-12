@@ -1,12 +1,18 @@
 TARGET=client.c
-BIN_CLIENT=client
-CFLAGS=-g -Wall
-
-.PHONY: client clean
+BIN=client
+CFLAGS=-ansi -g -Wall
 
 
-client:
-	gcc $(CFLAGS) $(TARGET_CLIENT) -o $(BIN_CLIENT)
+$(BIN): $(TARGET)
+	gcc $(CFLAGS) $(TARGET) -o $(BIN)
+
+
+.PHONY: compile clean test
+
+all: $(BIN)
 
 clean:
-	rm -f *.o $(BIN_CLIENT)
+	rm -f *.o $(BIN)
+
+test: $(BIN)
+	./$(BIN)
