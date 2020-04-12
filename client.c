@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
-#define exit_error(msg) do{perror(msg; exit(EXIT_FAILURE))}while(0)
+#define exit_error(msg) do{ perror(msg); exit(EXIT_FAILURE); }while(0)
 
 
 /*
@@ -47,4 +48,5 @@ int main(){
 		man 2 recv
 	*/
 
+	close(socket);
 }
