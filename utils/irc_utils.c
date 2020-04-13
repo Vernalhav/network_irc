@@ -12,7 +12,7 @@
 
 Socket *socket_create(){
 	/*
-		Creates a socket structure and fills in its FD (IP).
+		Creates an TCP/IP socket structure and fills in its FD.
 		AF_INET indicates that this socket can be used for
 		internet communications. SOCK_STREAM indicates that
 		the socket is sequenced, two-way, reliable and
@@ -41,7 +41,7 @@ Socket *socket_create(){
 }
 
 
-void socket_bind(Socket *socket, int port){
+void socket_bind(Socket *socket, int port, const char *ip){
 	/*
 		struct sockaddr_in;
 		
@@ -60,13 +60,13 @@ void socket_bind(Socket *socket, int port){
 		for the binding to occur.
 
 		AF_INET specifies that we are using IP
-		INADDR_ANY specifies that we are using
-			any available address
 		htons(port) gives us the port number in
 			network byte order
 	*/
+
 	socket->address.sin_family = AF_INET;
-	socket->address.sin_addr.s_addr = INADDR_ANY;
+	/* LOOPBACK address points to local machine */
+	socket->address.sin_addr.s_addr = inet_addr(ip != NULL ? ip : LOOPBACK);
 	socket->address.sin_port = htons(port);
 
 	/* For possible errors, see man 2 bind */
