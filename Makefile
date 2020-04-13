@@ -10,7 +10,7 @@ $(BIN): $(TARGET) $(LIB:.c=.o)
 $(LIB:.c=.o) : $(LIB)
 	gcc $(CFLAGS) -I./utils $< -c -o $@
 
-.PHONY: compile clean test
+.PHONY: all clean test
 
 all: $(BIN)
 
