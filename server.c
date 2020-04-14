@@ -25,13 +25,14 @@ void *chat_worker(void *args){
 
 	Socket *client_socket = clients[client];
 
-	int status, j;
+	int msg_len, j;
 	char msg[MAX_MSG_LEN] = {0};
 	
-	while (strcmp(msg, QUIT_CMD) && status > 0){
-		status = socket_receive(client_socket, msg);
+	while (strcmp(msg, QUIT_CMD)){
+		msg_len = socket_receive(client_socket, msg);
+		if (msg_len == 0) continue;
 
-		if (status < 0){
+		if (msg_len < 0){
 			console_log("Error receiving message!");
 			break;
 		}

@@ -23,10 +23,14 @@ void *receive_messages(void *args){
 
 	console_log("Receiving messages...");
 
-	int status = 1;
-	while (strcmp(msg, QUIT_CMD) && status >= 0){
-		status = socket_receive(socket, msg);
+	int received_bytes;
+	while (strcmp(msg, QUIT_CMD)){
+		received_bytes = socket_receive(socket, msg);
+		if (received_bytes == 0) continue;
+		if (received_bytes < 0) break;
+
 		puts(msg);
+		sleep(3);
 	}
 
 	return NULL;

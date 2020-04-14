@@ -155,11 +155,11 @@ Socket *socket_accept(Socket *server_socket){
 
 
 int socket_receive(Socket *socket, char buffer[MAX_MSG_LEN]){
-	int status = recv(socket->sockfd, buffer, MAX_MSG_LEN, 0);
-	if (status < 0)
+	int received_bytes = recv(socket->sockfd, buffer, MAX_MSG_LEN, 0);
+	if (received_bytes < 0)
 		console_log("socket_receive: Error reading message");
 	
-	return status;
+	return received_bytes;
 }
 
 

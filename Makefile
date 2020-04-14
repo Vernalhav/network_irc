@@ -19,15 +19,15 @@ $(LIB:.c=.o) : $(LIB) $(LIB:.c=.h)
 
 
 
-.PHONY: all clean test_client test_server
+.PHONY: all clean client_test server_test
 
 all: $(CLIENT_BIN) $(SERVER_BIN)
 
 clean:
 	rm -f *.o $(CLIENT_BIN) $(SERVER_BIN) ./utils/*.o
 
-test_client: $(CLIENT_BIN)
+client_test: $(CLIENT_BIN)
 	./$(CLIENT_BIN)
 
-test_server: $(SERVER_BIN)
+server_test: $(SERVER_BIN)
 	./$(SERVER_BIN)

@@ -81,8 +81,9 @@ Socket *socket_accept(Socket *server_socket);
 
 /*
 	Fills buffer with messages sent by
-	the socket.
-	Returns 1 on success and -1 on failure.
+	the client socket.
+	Returns number of bytes read, and -1
+	if failed.
 
 	NOTE: This function blocks the thread until
 		  a message is available.
