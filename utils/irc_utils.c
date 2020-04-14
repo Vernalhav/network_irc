@@ -137,6 +137,24 @@ Socket *socket_accept(Socket *server_socket){
 }
 
 
+void socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]){
+	int status = recv(client_socket->sockfd, buffer, MAX_MSG_LEN, 0);
+	if (status < 0)
+		exit_error("socket_receive: Error reading message");
+}
+
+
+void socket_send(Socket *socket, const char msg[MAX_MSG_LEN]){
+	int msg_len = strlen(msg);
+
+	int sent_bytes = 0;
+	while (sent_bytes < msg_len){
+		sent_bytes += send(socket->sockfd, msg + sent_bytes,\
+						   MAX_MSG_LEN - sent_bytes, 0);
+	}
+}
+
+
 void socket_free(Socket *socket){
 	close(socket->sockfd);
 	free(socket);
