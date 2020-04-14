@@ -1,6 +1,10 @@
 #ifndef IRC_UTILS_H
 #define IRC_UTILS_H
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
 #define PRINT_LOG 1
 #define console_log(msg) do{ if(PRINT_LOG) puts(msg); }while(0)
 #define exit_error(msg) do{ perror(msg); exit(EXIT_FAILURE); }while(0)
@@ -29,6 +33,7 @@ typedef struct socket_{
 */
 Socket *socket_create();
 
+
 /*
 	Binds socket tp port.
 	Exits if socket binding fails.
@@ -46,11 +51,20 @@ Socket *socket_create();
 */
 void socket_bind(Socket *socket, int port, const char *ip);
 
+
 /*
-	Configures socket to lsten
+	Connects socket to port/IP.
+	Returns 1 on success and -1 on failure.
+*/
+int socket_connect(Socket *socket, int port, const char *ip);
+
+
+/*
+	Configures socket to listen
 	to incoming connections
 */
 void socket_listen(Socket *socket);
+
 
 /*
 	Accepts a single connection.
@@ -64,14 +78,17 @@ void socket_listen(Socket *socket);
 */
 Socket *socket_accept(Socket *server_socket);
 
+
 /*
 	Fills buffer with messages sent by
 	the client socket.
+	Returns 1 on success and -1 on failure.
 
 	NOTE: This function blocks the thread until
 		  a message is available.
 */
-void socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]);
+int socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]);
+
 
 /*
 	Sends \0-terminated message to the socket.
@@ -79,13 +96,17 @@ void socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]);
 	This function guarantees that the whole
 	message will be sent, so long as it ends
 	with \0.
+
+	Returns 1 on success and -1 on failure.
 */
-void socket_send(Socket *socket, const char msg[MAX_MSG_LEN]);
+int socket_send(Socket *socket, const char msg[MAX_MSG_LEN]);
+
 
 /*
 	Closes socket's file descriptor and
 	frees dynamic memory.
 */
 void socket_free(Socket *socket);
+
 
 #endif

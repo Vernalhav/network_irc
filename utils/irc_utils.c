@@ -81,6 +81,21 @@ void socket_bind(Socket *socket, int port, const char *ip){
 }
 
 
+int socket_connect(Socket *socket, int port, const char *ip){
+	
+	socket->address.sin_family = AF_INET;
+	socket->address.sin_addr.s_addr = inet_addr(ip != NULL ? ip : LOOPBACK);
+	socket->address.sin_port = htons(port);
+	
+	int status = connect(socket->sockfd, (struct sockaddr *)&(socket->address),\
+			(socklen_t)sizeof(sockaddr_in));
+
+	console_log(status == 0 ? "Socket is connected" : "ERROR CONNECTING");
+
+	return status == 0 ? 1 : -1;
+}
+
+
 void socket_listen(Socket *socket){
 	/*
 		Sets up socket to receive connections.
@@ -94,6 +109,7 @@ void socket_listen(Socket *socket){
 			man 2 listen
 	*/
 	listen(socket->sockfd, MAX_BACKLOG);
+	console_log("Socket is listening");
 }
 
 
@@ -124,6 +140,7 @@ Socket *socket_accept(Socket *server_socket){
 	sockaddr_in peer_addr;
 	socklen_t addr_size = sizeof(peer_addr);
 
+	console_log("Awaiting connections to accept...");
 	int connected_fd = accept(server_socket->sockfd,\
 							  (sockaddr *)&peer_addr, &addr_size);
 
@@ -137,21 +154,28 @@ Socket *socket_accept(Socket *server_socket){
 }
 
 
-void socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]){
+int socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]){
 	int status = recv(client_socket->sockfd, buffer, MAX_MSG_LEN, 0);
 	if (status < 0)
-		exit_error("socket_receive: Error reading message");
+		console_log("socket_receive: Error reading message");
+	
+	return status;
 }
 
 
-void socket_send(Socket *socket, const char msg[MAX_MSG_LEN]){
+int socket_send(Socket *socket, const char msg[MAX_MSG_LEN]){
 	int msg_len = strlen(msg);
 
-	int sent_bytes = 0;
+	int sent_bytes = 0, error;
 	while (sent_bytes < msg_len){
-		sent_bytes += send(socket->sockfd, msg + sent_bytes,\
+		error = send(socket->sockfd, msg + sent_bytes,\
 						   MAX_MSG_LEN - sent_bytes, 0);
+		
+		if (error < 0) return -1;
+		sent_bytes += error;
 	}
+
+	return 1;
 }
 
 
