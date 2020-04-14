@@ -23,7 +23,7 @@ int main(){
 	char msg[4096] = {0};
 	while (strcmp(msg, "/quit")){
 		console_log("Waiting for message...");
-		socket_receive(connected_socket->sockfd, msg);
+		socket_receive(connected_socket, msg);
 		puts(msg);
 	}
 	

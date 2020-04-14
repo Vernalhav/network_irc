@@ -74,6 +74,15 @@ Socket *socket_accept(Socket *server_socket);
 void socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]);
 
 /*
+	Sends \0-terminated message to the socket.
+
+	This function guarantees that the whole
+	message will be sent, so long as it ends
+	with \0.
+*/
+void socket_send(Socket *socket, const char msg[MAX_MSG_LEN]);
+
+/*
 	Closes socket's file descriptor and
 	frees dynamic memory.
 */

@@ -4,10 +4,10 @@ LIB=./utils/irc_utils.c
 CFLAGS=-ansi -g -Wall
 
 
-$(BIN): $(TARGET) $(LIB:.c=.o)
+$(BIN) : $(TARGET) $(LIB:.c=.o)
 	gcc $(CFLAGS) -I./utils $^ -o $(BIN)
 
-$(LIB:.c=.o) : $(LIB)
+$(LIB:.c=.o) : $(LIB) $(LIB:.c=.h)
 	gcc $(CFLAGS) -I./utils $< -c -o $@
 
 .PHONY: all clean test
