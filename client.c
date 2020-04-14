@@ -6,11 +6,10 @@
 #include <pthread.h>
 #include <irc_utils.h>
 
-#define PORT 8888
-#define ADDR "127.0.0.1"
+#define SERVER_PORT 8888
+#define SERVER_ADDR "127.0.0.1"
 #define N_THREADS 2
-
-#define QUIT_CMF "/quit"
+#define QUIT_CMD "/quit"
 
 /* Args must be a single Socket pointer */
 void *receive_messages(void *args){
@@ -19,12 +18,14 @@ void *receive_messages(void *args){
 		them on the screen
 	*/
 
-	Socket *connected_socket = (Socket *)args;
+	Socket *socket = (Socket *)args;
 	char msg[MAX_MSG_LEN] = {0};
 
+	console_log("Receiving messages...");
+
 	int status = 1;
-	while (strcmp(msg, QUIT_CMF) && status >= 0){
-		status = socket_receive(connected_socket, msg);
+	while (strcmp(msg, QUIT_CMD) && status >= 0){
+		status = socket_receive(socket, msg);
 		puts(msg);
 	}
 
@@ -37,8 +38,10 @@ void *send_messages(void *args){
 	Socket *socket = (Socket *)args;
 	char msg[MAX_MSG_LEN] = {0};
 
+	console_log("Sending messages...");
+
 	int status = 1;
-	while (strcmp(msg, QUIT_CMF) && status >= 0){
+	while (strcmp(msg, QUIT_CMD) && status >= 0){
 		scanf("%[^\n]%*c", msg);
 		status = socket_send(socket, msg);
 	}
@@ -49,54 +52,19 @@ void *send_messages(void *args){
 
 int main(){
 
-	int listen_port, connected_port;
-	printf("Select port for this application to listen to: ");
-	scanf("%d", &listen_port);
-
-	printf("Select port for this application to connect to: ");
-	scanf("%d", &connected_port);
-
-	int accept_first;
-	printf("Is this client going to accept connection first?: ");
-	scanf("%d", &accept_first);
-
 	Socket *socket = socket_create();
-	socket_bind(socket, listen_port, "127.0.0.1");
-	socket_listen(socket);
-
-	Socket *connected_socket;
-	if (accept_first){
-		connected_socket = socket_accept(socket);
-		socket_connect(socket, connected_port, "127.0.0.1");		
-	} else {
-		socket_connect(socket, connected_port, "127.0.0.1");
-		connected_socket = socket_accept(socket);
-	}
-
-	void *(*THR_FUNCTIONS[N_THREADS])(void *) = {
-		receive_messages, send_messages
-	};
-
-	void *THR_ARGS[N_THREADS] = {
-		connected_socket, socket
-	};
+	socket_connect(socket, SERVER_PORT, SERVER_ADDR);
 
 	pthread_t threads[N_THREADS];
 
-	console_log("THREADS DISPATCHED!!");
+	pthread_create(threads + 0, NULL, send_messages, (void *)socket);
+	pthread_create(threads + 1, NULL, receive_messages, (void *)socket);
 
 	int i;
 	for (i = 0; i < N_THREADS; i++)
-		pthread_create(threads + i, NULL, THR_FUNCTIONS[i], THR_ARGS[i]);
-
-	
-	/* Waits for all threads to exit */
-	for (i = 0; i < N_THREADS; i++)
 		pthread_join(threads[i], NULL);
-	
-	socket_free(socket);
-	socket_free(connected_socket);
 
+	socket_free(socket);
 	return 0;
 }
 

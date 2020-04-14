@@ -81,13 +81,13 @@ Socket *socket_accept(Socket *server_socket);
 
 /*
 	Fills buffer with messages sent by
-	the client socket.
+	the socket.
 	Returns 1 on success and -1 on failure.
 
 	NOTE: This function blocks the thread until
 		  a message is available.
 */
-int socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]);
+int socket_receive(Socket *socket, char buffer[MAX_MSG_LEN]);
 
 
 /*

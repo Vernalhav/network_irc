@@ -154,8 +154,8 @@ Socket *socket_accept(Socket *server_socket){
 }
 
 
-int socket_receive(Socket *client_socket, char buffer[MAX_MSG_LEN]){
-	int status = recv(client_socket->sockfd, buffer, MAX_MSG_LEN, 0);
+int socket_receive(Socket *socket, char buffer[MAX_MSG_LEN]){
+	int status = recv(socket->sockfd, buffer, MAX_MSG_LEN, 0);
 	if (status < 0)
 		console_log("socket_receive: Error reading message");
 	
