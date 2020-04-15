@@ -7,35 +7,38 @@
 #include <irc_utils.h>
 
 #define MAX_CONNECTIONS 2
-#define SERVER_PORT 8888
-#define SERVER_ADDR "127.0.0.1"
 #define N_THREADS 2
 
 #define QUIT_CMD "/quit"
 
+
 typedef struct thread_args{
 	int client;
 	Socket **clients;
+	char username[MAX_NAME_LEN + 1];
 } thread_args;
 
 
 void *chat_worker(void *args){
 	int client = ((thread_args *)args)->client;
+	char *username = ((thread_args *)args)->username;
 	Socket **clients = ((thread_args *)args)->clients;
 
 	Socket *client_socket = clients[client];
 
 	int msg_len, j;
-	char msg[MAX_MSG_LEN] = {0};
-	
-	while (strcmp(msg, QUIT_CMD)){
-		msg_len = socket_receive(client_socket, msg);
-		if (msg_len == 0) continue;
+	char buffer[MAX_MSG_LEN] = {0};
+	char msg[MAX_NAME_LEN + MAX_MSG_LEN + 16];
 
-		if (msg_len < 0){
-			console_log("Error receiving message!");
+	while (strcmp(buffer, QUIT_CMD)){
+		msg_len = socket_receive(client_socket, buffer);
+
+		if (msg_len <= 0){
+			console_log("User disconnected unpredictably!");
 			break;
 		}
+
+		sprintf(msg, "<%s> %s\n", username, buffer);
 
 		for (j = 0; j < MAX_CONNECTIONS; j++){
 			if (j == client) continue;
@@ -60,10 +63,15 @@ int main(){
 	for (i = 0; i < MAX_CONNECTIONS; i++)
 		clients[i] = socket_accept(socket);
 
+	char temp_username[MAX_NAME_LEN + 1];
 	thread_args args[MAX_CONNECTIONS];
+
 	for (i = 0; i < MAX_CONNECTIONS; i++){
 		args[i].clients = clients;
 		args[i].client = i;
+		
+		sprintf(temp_username, "User %02d", i);
+		strncpy(args[i].username, temp_username, MAX_NAME_LEN + 1);
 	}
 
 	for (i = 0; i < MAX_CONNECTIONS; i++)

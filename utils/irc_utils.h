@@ -10,8 +10,13 @@
 #define exit_error(msg) do{ perror(msg); exit(EXIT_FAILURE); }while(0)
 
 #define MAX_MSG_LEN 4096
-#define MAX_BACKLOG 2
+#define MAX_NAME_LEN 31
+
 #define LOOPBACK "127.0.0.1"
+
+#define SERVER_PORT 8888
+#define SERVER_ADDR "127.0.0.1"
+#define MAX_BACKLOG 2
 
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in sockaddr_in;

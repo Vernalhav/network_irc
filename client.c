@@ -6,10 +6,9 @@
 #include <pthread.h>
 #include <irc_utils.h>
 
-#define SERVER_PORT 8888
-#define SERVER_ADDR "127.0.0.1"
 #define N_THREADS 2
 #define QUIT_CMD "/quit"
+
 
 /* Args must be a single Socket pointer */
 void *receive_messages(void *args){
@@ -19,18 +18,20 @@ void *receive_messages(void *args){
 	*/
 
 	Socket *socket = (Socket *)args;
-	char msg[MAX_MSG_LEN] = {0};
+	char buffer[MAX_MSG_LEN + MAX_NAME_LEN + 16] = {0};
+	char msg_sender[MAX_NAME_LEN + 1] = {0};
+	char msg[MAX_MSG_LEN + 1] = {0};
 
 	console_log("Receiving messages...");
 
 	int received_bytes;
 	while (strcmp(msg, QUIT_CMD)){
-		received_bytes = socket_receive(socket, msg);
-		if (received_bytes == 0) continue;
-		if (received_bytes < 0) break;
+		received_bytes = socket_receive(socket, buffer);
+		sscanf(buffer, "<%[^>]%*c %[^\n]%*c", msg_sender, msg);
 
-		puts(msg);
-		sleep(3);
+		if (received_bytes <= 0) break;
+		/* TODO: Check if message is overflowing the buffer! */
+		printf("<%s> %s\n", msg_sender, msg);
 	}
 
 	return NULL;
@@ -45,7 +46,7 @@ void *send_messages(void *args){
 	console_log("Sending messages...");
 
 	int status = 1;
-	while (strcmp(msg, QUIT_CMD) && status >= 0){
+	while (strcmp(msg, QUIT_CMD) && status > 0){
 		scanf("%[^\n]%*c", msg);
 		status = socket_send(socket, msg);
 	}
