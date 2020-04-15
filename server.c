@@ -79,8 +79,6 @@ int main(){
 
 	for (i = 0; i < MAX_CONNECTIONS; i++)
 		pthread_join(threads[i], NULL);
-
-	for (i = 0; i < MAX_CONNECTIONS; i++)
 		socket_free(clients[i]);
 
 	socket_free(socket);
