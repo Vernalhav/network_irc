@@ -11,6 +11,7 @@
 
 #define MAX_MSG_LEN 4096
 #define MAX_NAME_LEN 31
+#define WHOLE_MSG_LEN MAX_MSG_LEN + MAX_NAME_LEN + 16
 
 #define LOOPBACK "127.0.0.1"
 
@@ -93,7 +94,7 @@ Socket *socket_accept(Socket *server_socket);
 	NOTE: This function blocks the thread until
 		  a message is available.
 */
-int socket_receive(Socket *socket, char buffer[MAX_MSG_LEN]);
+int socket_receive(Socket *socket, char buffer[], int buffer_size);
 
 
 /*
@@ -101,11 +102,13 @@ int socket_receive(Socket *socket, char buffer[MAX_MSG_LEN]);
 
 	This function guarantees that the whole
 	message will be sent, so long as it ends
-	with \0.
+	with \0. That is, it will send strlen(msg)
+	bytes OR buffer_size bytes, whichever is
+	lesser.
 
 	Returns 1 on success and -1 on failure.
 */
-int socket_send(Socket *socket, const char msg[MAX_MSG_LEN]);
+int socket_send(Socket *socket, const char msg[], int buffer_size);
 
 
 /*

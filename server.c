@@ -6,8 +6,8 @@
 #include <pthread.h>
 #include <irc_utils.h>
 
-#define MAX_CONNECTIONS 2
-#define N_THREADS 2
+#define N_USERS 2	/* Exact number of users to chat */
+#define N_THREADS N_USERS
 
 #define QUIT_CMD "/quit"
 
@@ -26,12 +26,12 @@ void *chat_worker(void *args){
 
 	Socket *client_socket = clients[client];
 
-	int msg_len, j;
-	char buffer[MAX_MSG_LEN] = {0};
-	char msg[MAX_NAME_LEN + MAX_MSG_LEN + 16];
+	int msg_len, j, status;
+	char buffer[MAX_MSG_LEN + 1] = {0};
+	char msg[WHOLE_MSG_LEN];
 
 	while (strcmp(buffer, QUIT_CMD)){
-		msg_len = socket_receive(client_socket, buffer);
+		msg_len = socket_receive(client_socket, buffer, MAX_MSG_LEN);
 
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
@@ -40,9 +40,13 @@ void *chat_worker(void *args){
 
 		sprintf(msg, "<%s> %s\n", username, buffer);
 
-		for (j = 0; j < MAX_CONNECTIONS; j++){
+		for (j = 0; j < N_USERS; j++){
 			if (j == client) continue;
-			socket_send(clients[j], msg);
+			status = socket_send(clients[j], msg, WHOLE_MSG_LEN);
+
+			if (status < 0){
+				console_log("chat_worker: Error sending message to client");
+			}
 		}
 	}
 
@@ -56,17 +60,17 @@ int main(){
 	socket_bind(socket, SERVER_PORT, SERVER_ADDR);
 	socket_listen(socket);
 
-	Socket *clients[MAX_CONNECTIONS];
-	pthread_t threads[MAX_CONNECTIONS];
+	Socket *clients[N_USERS];
+	pthread_t threads[N_USERS];
 
 	int i;
-	for (i = 0; i < MAX_CONNECTIONS; i++)
+	for (i = 0; i < N_USERS; i++)
 		clients[i] = socket_accept(socket);
 
 	char temp_username[MAX_NAME_LEN + 1];
-	thread_args args[MAX_CONNECTIONS];
+	thread_args args[N_USERS];
 
-	for (i = 0; i < MAX_CONNECTIONS; i++){
+	for (i = 0; i < N_USERS; i++){
 		args[i].clients = clients;
 		args[i].client = i;
 		
@@ -74,12 +78,13 @@ int main(){
 		strncpy(args[i].username, temp_username, MAX_NAME_LEN + 1);
 	}
 
-	for (i = 0; i < MAX_CONNECTIONS; i++)
+	for (i = 0; i < N_USERS; i++)
 		pthread_create(threads + i, NULL, chat_worker, args + i);
 
-	for (i = 0; i < MAX_CONNECTIONS; i++)
+	for (i = 0; i < N_USERS; i++){
 		pthread_join(threads[i], NULL);
-		socket_free(clients[i]);
+		socket_free(clients[i]);		
+	}
 
 	socket_free(socket);
 	return 0;
