@@ -1,19 +1,15 @@
 # Internet Relay Chat in C
----
 A C-level implementation of a chatting system. Made to consolidate networking concepts in practice.  
 
   
 # Instructions:
----
 This program was developed with a Linux environment in mind (particularly, Ubuntu 18, but it should work with other Linux distros).  
 It was compiled with GCC 7.5.0, but it should work with other GCC compilers because it is ANSI C compliant.  
 ## Build
----
 After cloning the repo, simply run  
 ```make all```
 
 ## Run
----
 First, run the server:  
 ```make server_test```  
 Then, open up two more Bash instances and in each one run:  
@@ -23,7 +19,6 @@ Then, open up two more Bash instances and in each one run:
 
 
 ## Usage
----
 You can send messages to all other connected clients just by typing in the terminal. To quit, either run `/quit` or send an EOF (ctrl+d).  
   
 **NOTE:** Currently, the `/quit` functionality is not working as intended -- the client only terminates when both users send a `/quit` command.
