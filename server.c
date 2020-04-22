@@ -19,6 +19,54 @@ typedef struct thread_args{
 } thread_args;
 
 
+typedef struct interpret_args {
+	int client;
+	Socket *client_socket;
+	Socket **clients;
+	char *buffer;
+} interpret_args;
+
+enum COMMANDS {
+	QUIT, NO_CMD
+};
+
+
+/*
+	Sends msg to all clients that have a different
+	index than sender. To send to all clients, set
+	sender to -1.
+*/
+void send_to_clients(Socket **clients, int sender, char msg[]){
+	int j, status;
+	for (j = 0; j < N_USERS; j++){
+		if (j == sender) continue;
+		status = socket_send(clients[j], msg, WHOLE_MSG_LEN);
+
+		if (status < 0){
+			console_log("chat_worker: Error sending message to client");
+		}
+	}
+}
+
+
+int interpret_command(interpret_args *args){
+	char msg[WHOLE_MSG_LEN];
+
+	if (!strcmp(args->buffer, QUIT_CMD)){
+		/* Pings back to client */
+		socket_send(args->client_socket, "<SERVER> /quit", WHOLE_MSG_LEN);
+		console_log("User disconnected correctly.");
+
+		sprintf(msg, "<SERVER> User %d disconnected.\n", args->client);
+		send_to_clients(args->clients, args->client, msg);
+
+		return QUIT;
+	}
+
+	return NO_CMD;
+}
+
+
 void *chat_worker(void *args){
 	int client = ((thread_args *)args)->client;
 	char *username = ((thread_args *)args)->username;
@@ -26,9 +74,11 @@ void *chat_worker(void *args){
 
 	Socket *client_socket = clients[client];
 
-	int msg_len, j, status;
+	int msg_len, command;
 	char buffer[MAX_MSG_LEN + 1] = {0};
 	char msg[WHOLE_MSG_LEN];
+
+	interpret_args cmd_args = {client, client_socket, clients, buffer};
 
 	while (strcmp(buffer, QUIT_CMD)){
 		msg_len = socket_receive(client_socket, buffer, MAX_MSG_LEN);
@@ -38,15 +88,14 @@ void *chat_worker(void *args){
 			break;
 		}
 
-		sprintf(msg, "<%s> %s\n", username, buffer);
-
-		for (j = 0; j < N_USERS; j++){
-			if (j == client) continue;
-			status = socket_send(clients[j], msg, WHOLE_MSG_LEN);
-
-			if (status < 0){
-				console_log("chat_worker: Error sending message to client");
-			}
+		if (buffer[0] == '/'){
+			command = interpret_command(&cmd_args);
+			if (command == QUIT)
+				break;
+		} else {
+			/* Send regular message */
+			sprintf(msg, "<%s> %s\n", username, buffer);
+			send_to_clients(clients, client, msg);			
 		}
 	}
 
