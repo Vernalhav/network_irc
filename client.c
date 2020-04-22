@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -6,10 +8,12 @@
 #include <pthread.h>
 #include <irc_utils.h>
 
-#define SERVER_PORT 8888
-#define SERVER_ADDR "127.0.0.1"
+#define MAX_MSG_FACTOR 5 /* How many times larger than max_msg_len the msg can be */
+#define BUFFER_LEN MAX_MSG_LEN*MAX_MSG_FACTOR + 16
+
 #define N_THREADS 2
 #define QUIT_CMD "/quit"
+
 
 /* Args must be a single Socket pointer */
 void *receive_messages(void *args){
@@ -19,37 +23,71 @@ void *receive_messages(void *args){
 	*/
 
 	Socket *socket = (Socket *)args;
-	char msg[MAX_MSG_LEN] = {0};
+	char buffer[WHOLE_MSG_LEN] = {0};
+	char msg_sender[MAX_NAME_LEN + 1] = {0};
+	char msg[MAX_MSG_LEN + 1] = {0};
 
 	console_log("Receiving messages...");
 
 	int received_bytes;
 	while (strcmp(msg, QUIT_CMD)){
-		received_bytes = socket_receive(socket, msg);
-		if (received_bytes == 0) continue;
-		if (received_bytes < 0) break;
+		received_bytes = socket_receive(socket, buffer, WHOLE_MSG_LEN);
+		sscanf(buffer, "<%[^>]%*c %[^\n]%*c", msg_sender, msg);
 
-		puts(msg);
-		sleep(3);
+		if (received_bytes <= 0){
+			console_log("receive_messages: Error receiving bytes!");
+			break;
+		}
+
+		printf("<%s> %s\n", msg_sender, msg);
 	}
 
 	return NULL;
 }
 
+
+/*
+	Sends a message to the server. If
+	the message size is greater than the
+	maximum message length, this function
+	will break it up into smaller chunks and
+	send them individually.
+
+	Returns 1 on success, -1 on failure.
+*/
+int send_to_server(Socket *socket, char *msg){
+	int msg_len = strlen(msg), i, status;
+
+	for (i = 0; i < msg_len; i += MAX_MSG_LEN){
+		status = socket_send(socket, msg + i, MAX_MSG_LEN);
+		
+		if (status < 0){
+			console_log("send_to_server: Error sending message!");
+			return -1;
+		}
+	}
+
+	return 1;
+}
+
+
 /* Args must be a single Socket pointer */
 void *send_messages(void *args){
 	
 	Socket *socket = (Socket *)args;
-	char msg[MAX_MSG_LEN] = {0};
+	char *msg = (char *)malloc(BUFFER_LEN*sizeof(char));
+	msg[0] = '\0';
 
 	console_log("Sending messages...");
 
 	int status = 1;
-	while (strcmp(msg, QUIT_CMD) && status >= 0){
-		scanf("%[^\n]%*c", msg);
-		status = socket_send(socket, msg);
+	size_t msg_len = BUFFER_LEN;
+	while (strcmp(msg, QUIT_CMD) && status > 0){
+		if (getline(&msg, &msg_len, stdin) < 0) break;	
+		status = send_to_server(socket, msg);
 	}
 
+	free(msg);
 	return NULL;
 }
 
