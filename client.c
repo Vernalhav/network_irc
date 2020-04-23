@@ -8,7 +8,7 @@
 #include <pthread.h>
 #include <irc_utils.h>
 
-#define MAX_MSG_FACTOR 5 /* How many times larger than max_msg_len the msg can be */
+#define MAX_MSG_FACTOR 5
 #define BUFFER_LEN MAX_MSG_LEN*MAX_MSG_FACTOR + 16
 
 #define N_THREADS 2
@@ -31,16 +31,20 @@ void *receive_messages(void *args){
 
 	int received_bytes;
 	while (strcmp(msg, QUIT_CMD)){
-		received_bytes = socket_receive(socket, buffer, WHOLE_MSG_LEN);
-		sscanf(buffer, "<%[^>]%*c %[^\n]%*c", msg_sender, msg);
 
+		received_bytes = socket_receive(socket, buffer, WHOLE_MSG_LEN);
 		if (received_bytes <= 0){
 			console_log("receive_messages: Error receiving bytes!");
 			break;
 		}
 
+		sscanf(buffer, "<%[^>]%*c %[^\n]%*c", msg_sender, msg);
+		if (!strcmp(msg_sender, "SERVER") && !strcmp(msg, QUIT_CMD)) break;
+
 		printf("<%s> %s\n", msg_sender, msg);
 	}
+
+	console_log("Exiting receive_messages thread.");
 
 	return NULL;
 }
@@ -81,13 +85,21 @@ void *send_messages(void *args){
 	console_log("Sending messages...");
 
 	int status = 1;
-	size_t msg_len = BUFFER_LEN;
+	size_t max_msg_len = BUFFER_LEN, real_msg_len;
 	while (strcmp(msg, QUIT_CMD) && status > 0){
-		if (getline(&msg, &msg_len, stdin) < 0) break;	
+
+		real_msg_len = getline(&msg, &max_msg_len, stdin);
+		if (real_msg_len <= 0){
+			send_to_server(socket, QUIT_CMD);
+			break;
+		}
+
+		msg[real_msg_len - 1] = '\0';	/* Remove trailing \n */
 		status = send_to_server(socket, msg);
 	}
 
 	free(msg);
+	console_log("Exiting send_messages thread.");
 	return NULL;
 }
 
@@ -106,6 +118,7 @@ int main(){
 	for (i = 0; i < N_THREADS; i++)
 		pthread_join(threads[i], NULL);
 
+	console_log("Freeing socket");
 	socket_free(socket);
 	return 0;
 }
