@@ -154,6 +154,11 @@ Socket *socket_accept(Socket *server_socket){
 }
 
 
+int min(int a, int b){
+	return a < b ? a : b;
+}
+
+
 int socket_receive(Socket *socket, char buffer[], int buffer_size){
 	int received_bytes = recv(socket->sockfd, buffer, buffer_size, 0);
 	if (received_bytes < 0)
@@ -163,24 +168,24 @@ int socket_receive(Socket *socket, char buffer[], int buffer_size){
 }
 
 
-int min(int a, int b){
-	return a < b ? a : b;
-}
-
-
 int socket_send(Socket *socket, const char msg[], int buffer_size){
 	int msg_len = min(strlen(msg), buffer_size);
 
 	int sent_bytes = 0, error;
 	while (sent_bytes < msg_len){
 		error = send(socket->sockfd, msg + sent_bytes,\
-						   buffer_size - sent_bytes, 0);
+						   buffer_size - sent_bytes, MSG_NOSIGNAL);
 		
 		if (error < 0) return -1;
 		sent_bytes += error;
 	}
 
 	return 1;
+}
+
+
+int socket_shutdown(Socket *socket, int how){
+	return shutdown(socket->sockfd, how);
 }
 
 
