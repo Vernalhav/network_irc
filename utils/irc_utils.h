@@ -115,6 +115,13 @@ int socket_send(Socket *socket, const char msg[], int buffer_size);
 
 
 /*
+	Shuts down part of a full duplex connection.
+	how can be either SHUT_RD, SHUT_WR or SHUT_RDWR
+*/
+int socket_shutdown(Socket *socket, int how);
+
+
+/*
 	Closes socket's file descriptor and
 	frees dynamic memory.
 */

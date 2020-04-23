@@ -20,10 +20,10 @@ typedef struct thread_args{
 
 
 typedef struct interpret_args {
-	int client;
-	Socket *client_socket;
-	Socket **clients;
-	char *buffer;
+	int client;				/* Client index in clients list  */
+	Socket *client_socket;	/* Socket of the thread's client */
+	Socket **clients;		/* List of all connected sockets */
+	char *buffer;			/* Buffer with the recvd message */
 } interpret_args;
 
 enum COMMANDS {
@@ -40,8 +40,8 @@ void send_to_clients(Socket **clients, int sender, char msg[]){
 	int j, status;
 	for (j = 0; j < N_USERS; j++){
 		if (j == sender) continue;
-		status = socket_send(clients[j], msg, WHOLE_MSG_LEN);
 
+		status = socket_send(clients[j], msg, WHOLE_MSG_LEN);
 		if (status < 0){
 			console_log("chat_worker: Error sending message to client");
 		}
@@ -49,12 +49,21 @@ void send_to_clients(Socket **clients, int sender, char msg[]){
 }
 
 
+/*
+	Function that interprets all available
+	commands. args is a structure that contains
+	all arguments to this function. See the
+	struct definition for a list of all fields.
+
+	returns an integer indicating which command
+	was interpreted.
+*/
 int interpret_command(interpret_args *args){
 	char msg[WHOLE_MSG_LEN];
 
 	if (!strcmp(args->buffer, QUIT_CMD)){
 		/* Pings back to client */
-		socket_send(args->client_socket, "<SERVER> /quit", WHOLE_MSG_LEN);
+		socket_send(args->client_socket, "<SERVER> /quit\n", WHOLE_MSG_LEN);
 		console_log("User disconnected correctly.");
 
 		sprintf(msg, "<SERVER> User %d disconnected.\n", args->client);
@@ -66,7 +75,15 @@ int interpret_command(interpret_args *args){
 	return NO_CMD;
 }
 
+/*
+	Thread that handles a client connection.
+	It reads the designated client's messages
+	and interprets its commands.
 
+	This function terminates when its client
+	sends a quit command, or when there is
+	an unexpected disconnect by its client.
+*/
 void *chat_worker(void *args){
 	int client = ((thread_args *)args)->client;
 	char *username = ((thread_args *)args)->username;
@@ -130,10 +147,11 @@ int main(){
 	for (i = 0; i < N_USERS; i++)
 		pthread_create(threads + i, NULL, chat_worker, args + i);
 
-	for (i = 0; i < N_USERS; i++){
+	for (i = 0; i < N_USERS; i++)
 		pthread_join(threads[i], NULL);
+
+	for (i = 0; i < N_USERS; i++)
 		socket_free(clients[i]);		
-	}
 
 	socket_free(socket);
 	return 0;

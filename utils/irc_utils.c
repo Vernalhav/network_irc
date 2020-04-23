@@ -184,6 +184,11 @@ int socket_send(Socket *socket, const char msg[], int buffer_size){
 }
 
 
+int socket_shutdown(Socket *socket, int how){
+	return shutdown(socket->sockfd, how);
+}
+
+
 void socket_free(Socket *socket){
 	close(socket->sockfd);
 	free(socket);

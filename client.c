@@ -89,7 +89,10 @@ void *send_messages(void *args){
 	while (strcmp(msg, QUIT_CMD) && status > 0){
 
 		real_msg_len = getline(&msg, &max_msg_len, stdin);
-		if (real_msg_len <= 0) break;
+		if (real_msg_len <= 0){
+			send_to_server(socket, QUIT_CMD);
+			break;
+		}
 
 		msg[real_msg_len - 1] = '\0';	/* Remove trailing \n */
 		status = send_to_server(socket, msg);
@@ -115,6 +118,7 @@ int main(){
 	for (i = 0; i < N_THREADS; i++)
 		pthread_join(threads[i], NULL);
 
+	console_log("Freeing socket");
 	socket_free(socket);
 	return 0;
 }
