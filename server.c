@@ -60,10 +60,18 @@ void send_to_clients(Socket **clients, int sender, char msg[]){
 */
 int interpret_command(interpret_args *args){
 	char msg[WHOLE_MSG_LEN];
+	int status;
+
+	const char QUIT_MSG[] = "<SERVER> /quit\n";
 
 	if (!strcmp(args->buffer, QUIT_CMD)){
 		/* Pings back to client */
-		socket_send(args->client_socket, "<SERVER> /quit\n", WHOLE_MSG_LEN);
+		status = socket_send(args->client_socket, QUIT_MSG, WHOLE_MSG_LEN);
+		if (status < 0){
+			console_log("interpret_command: Error sennding quit message to user!");
+			return 0;
+		}
+
 		console_log("User disconnected correctly.");
 
 		sprintf(msg, "<SERVER> User %d disconnected.\n", args->client);
