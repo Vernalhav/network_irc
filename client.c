@@ -59,7 +59,7 @@ void *receive_messages(void *args){
 
 	Returns 1 on success, -1 on failure.
 */
-int send_to_server(Socket *socket, char *msg){
+int send_to_server(Socket *socket, const char *msg){
 	int msg_len = strlen(msg), i, status;
 
 	for (i = 0; i < msg_len; i += MAX_MSG_LEN){
@@ -85,12 +85,15 @@ void *send_messages(void *args){
 	console_log("Sending messages...");
 
 	int status = 1;
-	size_t max_msg_len = BUFFER_LEN, real_msg_len;
+	size_t max_msg_len = BUFFER_LEN;
+	ssize_t real_msg_len;
 	while (strcmp(msg, QUIT_CMD) && status > 0){
 
 		real_msg_len = getline(&msg, &max_msg_len, stdin);
+
 		if (real_msg_len <= 0){
-			send_to_server(socket, QUIT_CMD);
+			const char QUIT_MSG[] = "/quit";
+			send_to_server(socket, QUIT_MSG);
 			break;
 		}
 

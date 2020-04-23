@@ -20,5 +20,3 @@ Then, open up two more Bash instances and in each one run:
 
 ## Usage
 You can send messages to all other connected clients just by typing in the terminal. To quit, either run `/quit` or send an EOF (ctrl+d).  
-  
-**NOTE:** Currently, the `/quit` functionality is not working as intended -- the client only terminates when both users send a `/quit` command.
