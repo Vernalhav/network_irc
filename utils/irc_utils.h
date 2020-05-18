@@ -6,7 +6,7 @@
 #include <arpa/inet.h>
 
 #define PRINT_LOG 1
-#define console_log(msg) do{ if(PRINT_LOG) puts(msg); }while(0)
+#define console_log(s, args...) do{ if(PRINT_LOG) printf(s "\n", ##args); }while(0)
 #define exit_error(msg) do{ perror(msg); exit(EXIT_FAILURE); }while(0)
 
 #define MAX_MSG_LEN 4096
@@ -17,7 +17,7 @@
 
 #define SERVER_PORT 8888
 #define SERVER_ADDR "127.0.0.1"
-#define MAX_BACKLOG 2
+#define MAX_BACKLOG 6
 
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in sockaddr_in;

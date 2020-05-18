@@ -6,29 +6,114 @@
 #include <pthread.h>
 #include <irc_utils.h>
 
-#define N_USERS 2	/* Exact number of users to chat */
-#define N_THREADS N_USERS
+#define MAX_USERS 5
+#define N_THREADS MAX_USERS
 
 #define QUIT_CMD "/quit"
 
 
-typedef struct thread_args{
-	int client;
-	Socket **clients;
+typedef struct client {
+	Socket *socket;
+	int id;
+	pthread_t thread;
 	char username[MAX_NAME_LEN + 1];
-} thread_args;
+} Client;
 
-
-typedef struct interpret_args {
-	int client;				/* Client index in clients list  */
-	Socket *client_socket;	/* Socket of the thread's client */
-	Socket **clients;		/* List of all connected sockets */
-	char *buffer;			/* Buffer with the recvd message */
-} interpret_args;
 
 enum COMMANDS {
 	QUIT, NO_CMD
 };
+
+
+pthread_mutex_t lock;
+Client *clients[MAX_USERS];
+int current_users = 0;
+
+
+/* Creates a client with temporary username "User <id>" */
+Client *client_create(int id, Socket *socket){
+	Client *client = (Client *)malloc(sizeof(Client));
+
+	client->id = id;
+	client->socket = socket;
+	sprintf(client->username, "User %02d", id);
+
+	return client;
+}
+
+
+void client_free(Client *client){
+	socket_free(client->socket);
+	free(client);
+}
+
+
+/*
+	Adds client to the last available position
+	in the clients array. Mutex is used to
+	prevent thread usage inconsistencies.
+	Alters current_users value
+
+	Returns boolean whether or not the insertion
+	was successful.
+*/
+int add_client(Client *client){
+	pthread_mutex_lock(&lock);
+
+	if (current_users >= MAX_USERS){
+		console_log("add_client: did not add user. Max users online.");
+		pthread_mutex_unlock(&lock);
+		return 0;
+	}
+	
+	clients[current_users++] = client;
+	console_log("add_client: Current users: %d", current_users);
+
+	pthread_mutex_unlock(&lock);
+
+	return 1;
+}
+
+/*
+	Removes client from the clients array.
+	The array to the left of the removed
+	client is shifted to occupy the vacant
+	position.
+	Mutex is used to prevent thread usage
+	inconsistencies.
+	Client must be freed outside this function.
+	Alters current_users value
+
+	Returns boolean whether or not the insertion
+	was successful.
+*/
+int remove_client(Client *client){
+	pthread_mutex_lock(&lock);
+	
+	int i;
+	for (i = 0; i < current_users; i++){
+		if (clients[i]->id == client->id) break;
+	}
+
+	if (i >= current_users){
+		console_log("remove_client: Could not remove client.");
+		pthread_mutex_unlock(&lock);
+		return 0;
+	}
+
+	for (i = i; i < current_users - 1; i++){
+		clients[i] = clients[i + 1];
+	}
+
+	clients[current_users - 1] = NULL;	/* Small safety feature */
+
+	current_users--;
+	console_log("remove_client: Current users: %d", current_users);
+
+	pthread_mutex_unlock(&lock);
+
+	return 1;
+}
 
 
 /*
@@ -36,12 +121,13 @@ enum COMMANDS {
 	index than sender. To send to all clients, set
 	sender to -1.
 */
-void send_to_clients(Socket **clients, int sender, char msg[]){
+void send_to_clients(int sender_id, char msg[]){
+	
 	int j, status;
-	for (j = 0; j < N_USERS; j++){
-		if (j == sender) continue;
+	for (j = 0; j < current_users; j++){
+		if (clients[j]->id == sender_id) continue;
 
-		status = socket_send(clients[j], msg, WHOLE_MSG_LEN);
+		status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
 		if (status < 0){
 			console_log("chat_worker: Error sending message to client");
 		}
@@ -58,24 +144,24 @@ void send_to_clients(Socket **clients, int sender, char msg[]){
 	returns an integer indicating which command
 	was interpreted.
 */
-int interpret_command(interpret_args *args){
+int interpret_command(Client *client, char *buffer){
 	char msg[WHOLE_MSG_LEN];
 	int status;
 
 	const char QUIT_MSG[] = "<SERVER> /quit\n";
 
-	if (!strcmp(args->buffer, QUIT_CMD)){
+	if (!strcmp(buffer, QUIT_CMD)){
 		/* Pings back to client */
-		status = socket_send(args->client_socket, QUIT_MSG, WHOLE_MSG_LEN);
+		status = socket_send(client->socket, QUIT_MSG, WHOLE_MSG_LEN);
 		if (status < 0){
-			console_log("interpret_command: Error sennding quit message to user!");
+			console_log("interpret_command: Error sending quit message to user!");
 			return 0;
 		}
 
 		console_log("User disconnected correctly.");
 
-		sprintf(msg, "<SERVER> User %d disconnected.\n", args->client);
-		send_to_clients(args->clients, args->client, msg);
+		sprintf(msg, "<SERVER> %s disconnected.\n", client->username);
+		send_to_clients(client->id, msg);
 
 		return QUIT;
 	}
@@ -93,20 +179,18 @@ int interpret_command(interpret_args *args){
 	an unexpected disconnect by its client.
 */
 void *chat_worker(void *args){
-	int client = ((thread_args *)args)->client;
-	char *username = ((thread_args *)args)->username;
-	Socket **clients = ((thread_args *)args)->clients;
+	Client *client = (Client *)args;
 
-	Socket *client_socket = clients[client];
+	char welcome_msg[3*MAX_NAME_LEN];
+	sprintf(welcome_msg, "<SERVER> %s connected to chat!", client->username);
+	send_to_clients(client->id, welcome_msg);
 
 	int msg_len, command;
 	char buffer[MAX_MSG_LEN + 1] = {0};
 	char msg[WHOLE_MSG_LEN];
 
-	interpret_args cmd_args = {client, client_socket, clients, buffer};
-
 	while (strcmp(buffer, QUIT_CMD)){
-		msg_len = socket_receive(client_socket, buffer, MAX_MSG_LEN);
+		msg_len = socket_receive(client->socket, buffer, MAX_MSG_LEN);
 
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
@@ -114,15 +198,18 @@ void *chat_worker(void *args){
 		}
 
 		if (buffer[0] == '/'){
-			command = interpret_command(&cmd_args);
+			command = interpret_command(client, buffer);
 			if (command == QUIT)
 				break;
 		} else {
 			/* Send regular message */
-			sprintf(msg, "<%s> %s\n", username, buffer);
-			send_to_clients(clients, client, msg);			
+			sprintf(msg, "<%s> %s\n", client->username, buffer);
+			send_to_clients(client->id, msg);			
 		}
 	}
+
+	remove_client(client);
+	client_free(client);
 
 	return NULL;
 }
@@ -134,32 +221,19 @@ int main(){
 	socket_bind(socket, SERVER_PORT, SERVER_ADDR);
 	socket_listen(socket);
 
-	Socket *clients[N_USERS];
-	pthread_t threads[N_USERS];
+	pthread_mutex_init(&lock, NULL);
 
-	int i;
-	for (i = 0; i < N_USERS; i++)
-		clients[i] = socket_accept(socket);
+	unsigned int current_id = 0;
+	Client *current_client;
+	Socket *current_client_socket;
+	
+	do {
+		current_client_socket = socket_accept(socket);
+		current_client = client_create(current_id++, current_client_socket);
+		add_client(current_client);
 
-	char temp_username[MAX_NAME_LEN + 1];
-	thread_args args[N_USERS];
-
-	for (i = 0; i < N_USERS; i++){
-		args[i].clients = clients;
-		args[i].client = i;
-		
-		sprintf(temp_username, "User %02d", i);
-		strncpy(args[i].username, temp_username, MAX_NAME_LEN + 1);
-	}
-
-	for (i = 0; i < N_USERS; i++)
-		pthread_create(threads + i, NULL, chat_worker, args + i);
-
-	for (i = 0; i < N_USERS; i++)
-		pthread_join(threads[i], NULL);
-
-	for (i = 0; i < N_USERS; i++)
-		socket_free(clients[i]);		
+		pthread_create(&(current_client->thread), NULL, chat_worker, current_client);
+	} while (current_users > 0);
 
 	socket_free(socket);
 	return 0;
