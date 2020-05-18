@@ -17,7 +17,7 @@
 
 #define SERVER_PORT 8888
 #define SERVER_ADDR "127.0.0.1"
-#define MAX_BACKLOG 2
+#define MAX_BACKLOG 6
 
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in sockaddr_in;
