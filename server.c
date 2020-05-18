@@ -7,9 +7,11 @@
 #include <irc_utils.h>
 
 #define MAX_USERS 5
+#define MAX_RETRIES 5
 #define N_THREADS MAX_USERS
 
 #define QUIT_CMD "/quit"
+#define PING_CMD "/ping"
 
 
 typedef struct client {
@@ -21,7 +23,7 @@ typedef struct client {
 
 
 enum COMMANDS {
-	QUIT, NO_CMD
+	QUIT, PING, NO_CMD
 };
 
 
@@ -96,7 +98,7 @@ int remove_client(Client *client){
 	}
 
 	if (i >= current_users){
-		console_log("remove_client: Could not remove client.");
+		console_log("remove_client: Client not found.");
 		pthread_mutex_unlock(&lock);
 		return 0;
 	}
@@ -127,9 +129,18 @@ void send_to_clients(int sender_id, char msg[]){
 	for (j = 0; j < current_users; j++){
 		if (clients[j]->id == sender_id) continue;
 
+		int send_retries = 0;
 		status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
-		if (status < 0){
-			console_log("chat_worker: Error sending message to client");
+		
+		while (status < 0 && send_retries < MAX_RETRIES){
+			send_retries++;
+			console_log("chat_worker: Error sending message to client %s. Attempt %d", clients[j]->username, send_retries);
+			status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
+		}
+
+		if (send_retries >= MAX_RETRIES){
+			console_log("chat_worker: Client %s unresponsive. Disconnecting.", clients[j]->username);
+			remove_client(clients[j]);
 		}
 	}
 }
@@ -149,21 +160,44 @@ int interpret_command(Client *client, char *buffer){
 	int status;
 
 	const char QUIT_MSG[] = "<SERVER> /quit\n";
+	const char PING_MSG[] = "<SERVER> pong\n";
 
+	int send_retries = 0;
 	if (!strcmp(buffer, QUIT_CMD)){
-		/* Pings back to client */
+
+		/* Sends quit command to client */
 		status = socket_send(client->socket, QUIT_MSG, WHOLE_MSG_LEN);
-		if (status < 0){
-			console_log("interpret_command: Error sending quit message to user!");
-			return 0;
+
+		while (status < 0 && send_retries < MAX_RETRIES){
+			send_retries++;
+			console_log("interpret_command: attemtping to resend quit message to user. Attempt %d", send_retries);
+			status = socket_send(client->socket, QUIT_MSG, WHOLE_MSG_LEN);
 		}
 
-		console_log("User disconnected correctly.");
-
-		sprintf(msg, "<SERVER> %s disconnected.\n", client->username);
-		send_to_clients(client->id, msg);
+		if (send_retries < MAX_RETRIES){
+			console_log("User disconnected correctly.");
+			sprintf(msg, "<SERVER> %s disconnected.\n", client->username);
+			send_to_clients(client->id, msg);
+		}
 
 		return QUIT;
+	}
+
+	if (!strcmp(buffer, PING_CMD)){
+		status = socket_send(client->socket, PING_MSG, WHOLE_MSG_LEN);
+
+		while (status < 0 && send_retries < MAX_RETRIES){
+			send_retries++;
+			console_log("interpret_command: attempt %d to ping back client %s", send_retries, client->username);
+			status = socket_send(client->socket, PING_MSG, WHOLE_MSG_LEN);
+		}
+
+		if (send_retries >= MAX_RETRIES)
+			console_log("interpret_command: could not ping back user %s", client->username);
+		else
+			console_log("interpret_command: successfully pinged user %s", client->username);
+
+		return PING;
 	}
 
 	return NO_CMD;
