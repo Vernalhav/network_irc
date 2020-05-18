@@ -61,12 +61,14 @@ int add_client(Client *client){
 	pthread_mutex_lock(&lock);
 
 	if (current_users >= MAX_USERS){
-		console_log("add_client: max users exceeded.");
+		console_log("add_client: did not add user. Max users online.");
 		pthread_mutex_unlock(&lock);
 		return 0;
 	}
 	
 	clients[current_users++] = client;
+	console_log("add_client: Current users: %d", current_users);
+
 	pthread_mutex_unlock(&lock);
 
 	return 1;
@@ -106,6 +108,8 @@ int remove_client(Client *client){
 	clients[current_users - 1] = NULL;	/* Small safety feature */
 
 	current_users--;
+	console_log("remove_client: Current users: %d", current_users);
+
 	pthread_mutex_unlock(&lock);
 
 	return 1;
@@ -176,6 +180,10 @@ int interpret_command(Client *client, char *buffer){
 */
 void *chat_worker(void *args){
 	Client *client = (Client *)args;
+
+	char welcome_msg[3*MAX_NAME_LEN];
+	sprintf(welcome_msg, "<SERVER> %s connected to chat!", client->username);
+	send_to_clients(client->id, welcome_msg);
 
 	int msg_len, command;
 	char buffer[MAX_MSG_LEN + 1] = {0};
