@@ -12,7 +12,7 @@
 
 #define QUIT_CMD "/quit"
 #define PING_CMD "/ping"
-#define RENAME_CMD "/rename"
+#define RENAME_CMD "/nickname"
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
 
@@ -178,7 +178,7 @@ void send_to_clients(int sender_id, char msg[]){
 
 int quit_command(Client *client){
 
-	const char QUIT_MSG[] = "<SERVER> /quit\n";
+	const char QUIT_MSG[] = "<SERVER> /quit";
 	char msg[WHOLE_MSG_LEN];
 	int send_retries = 0;
 
@@ -193,7 +193,7 @@ int quit_command(Client *client){
 
 	if (send_retries < MAX_RETRIES){
 		console_log("User disconnected correctly.");
-		sprintf(msg, "<SERVER> %s disconnected.\n", client->username);
+		sprintf(msg, "<SERVER> %s disconnected.", client->username);
 		send_to_clients(client->id, msg);
 	}
 
@@ -203,7 +203,7 @@ int quit_command(Client *client){
 
 int ping_command(Client *client){
 
-	const char PING_MSG[] = "<SERVER> pong\n";
+	const char PING_MSG[] = "<SERVER> pong";
 	int send_retries = 0;
 
 	int status = socket_send(client->socket, PING_MSG, WHOLE_MSG_LEN);
@@ -228,13 +228,13 @@ int rename_command(Client *client, char *buffer){
 	int RENAME_LEN = strlen(RENAME_CMD);
 
 	if (strlen(buffer) <= RENAME_LEN || buffer[RENAME_LEN] != ' '){
-		char msg[] = "Rename syntax is not correct. Usage is: /rename <new name>";
+		char msg[] = "Rename syntax is not correct. Usage is: /nickname <new name>";
 		socket_send(client->socket, msg, WHOLE_MSG_LEN);
 		return RENAME;
 	}
 
 	/* This message gets overwritten if the rename is successful */
-	char RENAME_MSG[MAX_MSG_LEN + 64] = "<SERVER> Failed to rename. Make sure your name does not exceed the maximum character limit or contain special symbols.\n";
+	char RENAME_MSG[MAX_MSG_LEN + 64] = "<SERVER> Failed to rename. Make sure your name does not exceed the maximum character limit or contain special symbols.";
 	char new_name[MAX_NAME_LEN + 1];
 
 	int is_valid = parse_name(buffer, new_name);
@@ -244,11 +244,18 @@ int rename_command(Client *client, char *buffer){
 		return RENAME;
 	}
 
-	sprintf(RENAME_MSG, "<SERVER> User %s renamed to %s\n", client->username, new_name);
+	sprintf(RENAME_MSG, "<SERVER> User %s renamed to %s", client->username, new_name);
 	strncpy(client->username, new_name, MAX_NAME_LEN + 1);
 	send_to_clients(client->id, RENAME_MSG);
 
 	return RENAME;
+}
+
+
+int invalid_command(Client *client){
+	char msg[] = "<SERVER> Invalid command. Available commands are:\n  /quit\n  /ping\n  /nickname <new name>\n";
+	socket_send(client->socket, msg, MAX_MSG_LEN);
+	return NO_CMD;
 }
 
 
@@ -273,7 +280,7 @@ int interpret_command(Client *client, char *buffer){
 		return rename_command(client, buffer);
 	}
 
-	return NO_CMD;
+	return invalid_command(client);
 }
 
 /*
@@ -301,7 +308,7 @@ void *chat_worker(void *args){
 
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
-			sprintf(msg,"<SERVER> %s disconnected.\n", client->username);
+			sprintf(msg,"<SERVER> %s disconnected.", client->username);
 			send_to_clients(client->id, msg);
 			break;
 		}
@@ -309,10 +316,10 @@ void *chat_worker(void *args){
 		if (buffer[0] == '/'){
 			command = interpret_command(client, buffer);
 			if (command == QUIT) break;
-			
+
 		} else {
 			/* Send regular message */
-			sprintf(msg, "<%s> %s\n", client->username, buffer);
+			sprintf(msg, "<%s> %s", client->username, buffer);
 			send_to_clients(client->id, msg);			
 		}
 	}

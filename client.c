@@ -15,6 +15,27 @@
 #define QUIT_CMD "/quit"
 
 
+void parse_message(char *buffer, char *msg_sender, char *msg){
+
+	memset(msg_sender, 0, (MAX_NAME_LEN + 1)*sizeof(char));
+	memset(msg, 0, (MAX_MSG_LEN + 1)*sizeof(char));
+
+	if (buffer[0] != '<'){
+		strcpy(msg_sender, "?");
+		strncpy(msg, buffer, MAX_MSG_LEN + 1);
+		return;
+	}
+
+	int i;
+	for (i = 1; i < MAX_MSG_LEN && buffer[i] != '>'; i++){
+		msg_sender[i - 1] = buffer[i];
+	}
+	msg_sender[i-1] = '\0';
+
+	strncpy(msg, buffer + i + 2, MAX_MSG_LEN);
+}
+
+
 /* Args must be a single Socket pointer */
 void *receive_messages(void *args){
 	/*
@@ -23,9 +44,9 @@ void *receive_messages(void *args){
 	*/
 
 	Socket *socket = (Socket *)args;
-	char buffer[WHOLE_MSG_LEN] = {0};
-	char msg_sender[MAX_NAME_LEN + 1] = {0};
-	char msg[MAX_MSG_LEN + 1] = {0};
+	char buffer[WHOLE_MSG_LEN];
+	char msg_sender[MAX_NAME_LEN + 1];
+	char msg[MAX_MSG_LEN + 1];
 
 	console_log("Receiving messages...");
 
@@ -38,10 +59,10 @@ void *receive_messages(void *args){
 			break;
 		}
 
-		sscanf(buffer, "<%[^>]%*c %[^\n]%*c", msg_sender, msg);
+		parse_message(buffer, msg_sender, msg);
 		if (!strcmp(msg_sender, "SERVER") && !strcmp(msg, QUIT_CMD)) break;
 
-		printf("<%s> %s\n", msg_sender, msg);
+		printf("<%s> %s%c", msg_sender, msg, msg[strlen(msg)-1] == '\n' ? '\0' : '\n');
 	}
 
 	console_log("Exiting receive_messages thread.");
