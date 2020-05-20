@@ -4,17 +4,30 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include <pthread.h>
 #include <irc_utils.h>
+#include <regex.h>
 
 #define MAX_MSG_FACTOR 5
 #define BUFFER_LEN MAX_MSG_LEN*MAX_MSG_FACTOR + 16
 
 #define N_THREADS 2
 #define QUIT_CMD "/quit"
+#define MAX_CMD_LEN 1023
 
+#define NICKNAME nickname[0] == '\0' ? "not set" : nickname
+#define MATCH_IPV4_REGEX "([0-9]{1,3}\\.){3}[0-9]{1,3}"
 
+/*
+	Parses received buffer and fills in
+	msg_sender with the author's name and
+	msg with the actual message content.
+
+	Both msg_sender and msg are initialized
+	with '\0'.
+*/
 void parse_message(char *buffer, char *msg_sender, char *msg){
 
 	memset(msg_sender, 0, (MAX_NAME_LEN + 1)*sizeof(char));
@@ -130,10 +143,20 @@ void *send_messages(void *args){
 }
 
 
-int main(){
-
+/*
+	Connects to chatting server at addr/port.
+	Returns 1 if the connection was successful
+	and 0 if server wasn't available.
+*/
+int connect_and_chat(char *addr, int port, char *nickname){
+	
 	Socket *socket = socket_create();
-	socket_connect(socket, SERVER_PORT, SERVER_ADDR);
+	int status = socket_connect(socket, port, addr);
+
+	if (status == -1){
+		socket_free(socket);
+		return 0;
+	}
 
 	pthread_t threads[N_THREADS];
 
@@ -146,10 +169,94 @@ int main(){
 
 	console_log("Freeing socket");
 	socket_free(socket);
-	return 0;
+
+	return 1;
 }
 
+
 /*
-	Super helpful reference:
-	http://beej.us/guide/bgnet/html/
+	Alters ipv4_addr and port to contain the values
+	specified by the user in cmd.
+	
+	If the string is invalid, the original buffers
+	are not altered and 0 is returned.
+
+	Otherwise, the buffers containt the values entered
+	in cmd and 1 is returned.
 */
+int change_server(char *cmd, char *ipv4_addr, int *port){
+
+	char temp_addr[16] = {0};
+	int temp_port = -1;
+
+	sscanf(cmd, "%*s %s %d", temp_addr, &temp_port);
+
+	if (temp_port < 0 || temp_addr[0] == '\0'){
+		printf("Invalid syntax.\nUse /server <IPv4> <port>\n");
+		return 0;
+	}
+
+	regex_t regex;
+	int status = regcomp(&regex, MATCH_IPV4_REGEX, REG_EXTENDED);
+
+	if (status){
+		console_log("Could not compile regex.");
+		regfree(&regex);
+		return 0;
+	}
+	
+	status = regexec(&regex, temp_addr, 0, NULL, 0);
+	regfree(&regex);
+	
+	if (status != 0){
+		printf("The IPv4 address supplied is invalid.\n");
+		return 0;
+	}
+
+	*port = temp_port;
+	strncpy(ipv4_addr, temp_addr, 16);
+	
+	printf("Server connection info changed successfully!.\n");
+	return 1;
+}
+
+
+int change_nickname(char *cmd, char *nickname){
+	return 1;
+}
+
+
+int main(){
+
+	/* Default connection settings */
+	char ipv4_addr[16];
+	int port = SERVER_PORT;
+	strncpy(ipv4_addr, SERVER_ADDR, 16);
+
+	char nickname[MAX_NAME_LEN + 1] = {0};
+	char cmd[MAX_CMD_LEN + 1] = {0};
+
+	do {
+		printf("Current server is %s port %d\nCurrent nickname is %s\n", ipv4_addr, port, NICKNAME);
+		printf(">> ");
+		scanf("%[^\n]%*c", cmd);
+
+		if (!strncmp(cmd, "/connect", 8)){
+			int status = connect_and_chat(ipv4_addr, port, nickname);
+			if (!status)
+				printf("Could not reach server.\n");
+		}
+
+		if (!strncmp(cmd, "/server", 7)){
+			change_server(cmd, ipv4_addr, &port);
+		}
+		
+		if (!strncmp(cmd, "/nickname", 9)){
+			change_nickname(cmd, nickname);
+		}
+
+		putchar('\n');
+	} while (strncmp(cmd, "/quit", 5));
+
+	return 0;
+}
