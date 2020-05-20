@@ -54,6 +54,8 @@ void *receive_messages(void *args){
 	while (strcmp(msg, QUIT_CMD)){
 
 		received_bytes = socket_receive(socket, buffer, WHOLE_MSG_LEN);
+		if (strlen(received_bytes == 0)) continue;	/* Possible transmission mistakes */
+
 		if (received_bytes <= 0){
 			console_log("receive_messages: Error receiving bytes!");
 			break;
