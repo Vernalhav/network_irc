@@ -17,8 +17,10 @@
 #define QUIT_CMD "/quit"
 #define MAX_CMD_LEN 1023
 
-#define NICKNAME nickname[0] == '\0' ? "not set" : nickname
+#define NICKNAME nickname[0] == '<' ? "not set" : nickname
 #define MATCH_IPV4_REGEX "([0-9]{1,3}\\.){3}[0-9]{1,3}"
+
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
 
 /*
 	Parses received buffer and fills in
@@ -67,6 +69,7 @@ void *receive_messages(void *args){
 	while (strcmp(msg, QUIT_CMD)){
 
 		received_bytes = socket_receive(socket, buffer, WHOLE_MSG_LEN);
+
 		if (strlen(buffer) == 0) continue;	/* Possible transmission mistakes */
 
 		if (received_bytes <= 0){
@@ -158,6 +161,8 @@ int connect_and_chat(char *addr, int port, char *nickname){
 		return 0;
 	}
 
+	socket_send(socket, nickname, MAX_MSG_LEN);
+
 	pthread_t threads[N_THREADS];
 
 	pthread_create(threads + 0, NULL, send_messages, (void *)socket);
@@ -221,7 +226,32 @@ int change_server(char *cmd, char *ipv4_addr, int *port){
 }
 
 
+/*
+	Alters nickname to the user-specified
+	value.
+
+	If the command is invalid or the nickname
+	contains illegal characters, nickname is
+	not altered and 0 is returned.
+	
+	Otherwise, nickname is altered and 1 is
+	returned.
+*/
 int change_nickname(char *cmd, char *nickname){
+	
+	char temp_nickname[MAX_CMD_LEN + 1] = {0};
+	sscanf(cmd, "%*s %[^\n]%*c", temp_nickname);
+
+	int i;
+	for (i = 0; i < MAX_NAME_LEN; i++){
+		if (!VALID_NAME_CHAR(temp_nickname[i])){
+			printf("Invalid name: illegal character '%c\n'", temp_nickname[i]);	
+			return 0;
+		}
+		if (temp_nickname[i] == '\0') break;
+	}
+
+	strncpy(nickname, temp_nickname, MAX_NAME_LEN + 1);
 	return 1;
 }
 
@@ -233,10 +263,12 @@ int main(){
 	int port = SERVER_PORT;
 	strncpy(ipv4_addr, SERVER_ADDR, 16);
 
-	char nickname[MAX_NAME_LEN + 1] = {0};
+	char nickname[MAX_NAME_LEN + 1] = "<CLIENT> default";
 	char cmd[MAX_CMD_LEN + 1] = {0};
 
 	do {
+		cmd[0] = '\0';
+		
 		printf("Current server is %s port %d\nCurrent nickname is %s\n", ipv4_addr, port, NICKNAME);
 		printf(">> ");
 		scanf("%[^\n]%*c", cmd);
@@ -254,9 +286,9 @@ int main(){
 		if (!strncmp(cmd, "/nickname", 9)){
 			change_nickname(cmd, nickname);
 		}
-
 		putchar('\n');
-	} while (strncmp(cmd, "/quit", 5));
+
+	} while (strncmp(cmd, "/quit", 5) && cmd[0] != '\0');
 
 	return 0;
 }
