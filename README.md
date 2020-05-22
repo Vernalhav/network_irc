@@ -28,6 +28,7 @@ The commands to do this are
 ```/connect - Connects to the server```  
 ```/server <IPv4> <port> - Change server connection settings```  
 ```/nickname <nickname> - Change your current nickname```  
+  
 Once you are connected to the server, you can send messages to all other connected clients just by typing in the terminal. The available commands are  
 ```/nickname <new name> - Change your nickname```  
 ```/ping - Check connection to server```  
