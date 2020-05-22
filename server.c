@@ -228,7 +228,7 @@ int rename_command(Client *client, char *buffer){
 	int RENAME_LEN = strlen(RENAME_CMD);
 
 	if (strlen(buffer) <= RENAME_LEN || buffer[RENAME_LEN] != ' '){
-		char msg[] = "Rename syntax is not correct. Usage is: /nickname <new name>";
+		char msg[] = "<SERVER> Rename syntax is not correct. Usage is: /nickname <new name>";
 		socket_send(client->socket, msg, WHOLE_MSG_LEN);
 		return RENAME;
 	}
@@ -253,7 +253,7 @@ int rename_command(Client *client, char *buffer){
 
 
 int invalid_command(Client *client){
-	char msg[] = "<SERVER> Invalid command. Available commands are:\n  /quit\n  /ping\n  /nickname <new name>\n";
+	char msg[] = "<SERVER> Invalid command. Available commands are:\n  > /quit\n  > /ping\n  > /nickname <new name>\n  > /quit\n";
 	socket_send(client->socket, msg, MAX_MSG_LEN);
 	return NO_CMD;
 }
@@ -283,6 +283,7 @@ int interpret_command(Client *client, char *buffer){
 	return invalid_command(client);
 }
 
+
 /*
 	Thread that handles a client connection.
 	It reads the designated client's messages
@@ -305,6 +306,9 @@ void *chat_worker(void *args){
 	char welcome_msg[3*MAX_NAME_LEN];
 	sprintf(welcome_msg, "<SERVER> %s connected to chat!", client->username);
 	send_to_clients(client->id, welcome_msg);
+
+	char HELP_MSG[] = "<SERVER> Type /help to see available commands.";
+	socket_send(client->socket, HELP_MSG, MAX_MSG_LEN);
 
 	int msg_len, command;
 	char buffer[MAX_MSG_LEN + 1] = {0};
@@ -361,8 +365,3 @@ int main(){
 	socket_free(socket);
 	return 0;
 }
-
-/*
-	Super helpful reference:
-	http://beej.us/guide/bgnet/html/
-*/

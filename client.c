@@ -22,6 +22,12 @@
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
 
+
+void help(){
+	printf("Available commands:\n  > /connect: connect to current server\n  > /server <IPv4> <port>: change connection settings\n  > /nickname <nickname>: change your nickname\n  > /quit: quit the application");
+}
+
+
 /*
 	Parses received buffer and fills in
 	msg_sender with the author's name and
@@ -245,7 +251,7 @@ int change_nickname(char *cmd, char *nickname){
 	int i;
 	for (i = 0; i < MAX_NAME_LEN; i++){
 		if (!VALID_NAME_CHAR(temp_nickname[i])){
-			printf("Invalid name: illegal character '%c\n'", temp_nickname[i]);	
+			printf("Invalid name: illegal character '%c'\n", temp_nickname[i]);	
 			return 0;
 		}
 		if (temp_nickname[i] == '\0') break;
@@ -266,6 +272,8 @@ int main(){
 	char nickname[MAX_NAME_LEN + 1] = "<CLIENT> default";
 	char cmd[MAX_CMD_LEN + 1] = {0};
 
+	printf("Type /help to see available commands.\n");
+
 	do {
 		cmd[0] = '\0';
 		
@@ -279,13 +287,18 @@ int main(){
 				printf("Could not reach server.\n");
 		}
 
-		if (!strncmp(cmd, "/server", 7)){
+		else if (!strncmp(cmd, "/server", 7)){
 			change_server(cmd, ipv4_addr, &port);
 		}
 		
-		if (!strncmp(cmd, "/nickname", 9)){
+		else if (!strncmp(cmd, "/nickname", 9)){
 			change_nickname(cmd, nickname);
 		}
+
+		else {
+			help();
+		}
+
 		putchar('\n');
 
 	} while (strncmp(cmd, "/quit", 5) && cmd[0] != '\0');
