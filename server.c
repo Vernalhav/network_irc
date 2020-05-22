@@ -1,15 +1,23 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 
-#include <pthread.h>
 #include <irc_utils.h>
+#include <signal.h>
+#include <pthread.h>
 
 #define MAX_USERS 5
+#define MAX_RETRIES 5
 #define N_THREADS MAX_USERS
 
 #define QUIT_CMD "/quit"
+#define PING_CMD "/ping"
+#define RENAME_CMD "/nickname"
+
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
 
 
 typedef struct client {
@@ -21,13 +29,103 @@ typedef struct client {
 
 
 enum COMMANDS {
-	QUIT, NO_CMD
+	QUIT, PING, RENAME, NO_CMD
 };
 
 
 pthread_mutex_t lock;
 Client *clients[MAX_USERS];
 int current_users = 0;
+
+
+
+/*
+	Removes client from the clients array.
+	The array to the left of the removed
+	client is shifted to occupy the vacant
+	position.
+	Mutex is used to prevent thread usage
+	inconsistencies.
+	Client must be freed outside this function.
+	Alters current_users value
+
+	Returns boolean whether or not the insertion
+	was successful.
+*/
+int remove_client(Client *client){
+	pthread_mutex_lock(&lock);
+	
+	int i;
+	for (i = 0; i < current_users; i++){
+		if (clients[i]->id == client->id) break;
+	}
+
+	if (i >= current_users){
+		console_log("remove_client: Client not found.");
+		pthread_mutex_unlock(&lock);
+		return 0;
+	}
+
+	for (i = i; i < current_users - 1; i++){
+		clients[i] = clients[i + 1];
+	}
+
+	clients[current_users - 1] = NULL;	/* Small safety feature */
+
+	current_users--;
+	console_log("remove_client: Current users: %d", current_users);
+
+	pthread_mutex_unlock(&lock);
+
+	return 1;
+}
+
+
+/*
+	Sends msg to all clients that have a different
+	index than sender. To send to all clients, set
+	sender to -1.
+*/
+void send_to_clients(int sender_id, char msg[]){
+	
+	int j, status;
+	for (j = 0; j < current_users; j++){
+		if (clients[j]->id == sender_id) continue;
+
+		int send_retries = 0;
+		status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
+		
+		while (status < 0 && send_retries < MAX_RETRIES){
+			send_retries++;
+			console_log("chat_worker: Error sending message to client %s. Attempt %d", clients[j]->username, send_retries);
+			status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
+		}
+
+		if (send_retries >= MAX_RETRIES){
+			console_log("chat_worker: Client %s unresponsive. Disconnecting.", clients[j]->username);
+			remove_client(clients[j]);
+		}
+	}
+}
+
+
+void disconnect_clients(){
+	char CLOSE_MSG[] = "<SERVER> Closing server. Terminating connection.";
+	send_to_clients(-1, CLOSE_MSG);
+	char QUIT_MSG[] = "<SERVER> /quit";
+	send_to_clients(-1, QUIT_MSG);
+
+	while (current_users > 0){
+		remove_client(clients[0]);
+	}
+}
+
+
+void handle_interrupt(int sig){
+	if (current_users > 0){
+		printf("\nCan't terminate because users are still connected\n");
+	} else exit(0);
+}
 
 
 /* Creates a client with temporary username "User <id>" */
@@ -61,109 +159,155 @@ int add_client(Client *client){
 	pthread_mutex_lock(&lock);
 
 	if (current_users >= MAX_USERS){
-		console_log("add_client: max users exceeded.");
+		console_log("add_client: did not add user. Max users online.");
 		pthread_mutex_unlock(&lock);
 		return 0;
 	}
 	
 	clients[current_users++] = client;
+	console_log("add_client: Current users: %d", current_users);
+
 	pthread_mutex_unlock(&lock);
 
 	return 1;
 }
 
-/*
-	Removes client from the clients array.
-	The array to the left of the removed
-	client is shifted to occupy the vacant
-	position.
-	Mutex is used to prevent thread usage
-	inconsistencies.
-	Client must be freed outside this function.
-	Alters current_users value
 
-	Returns boolean whether or not the insertion
-	was successful.
-*/
-int remove_client(Client *client){
-	pthread_mutex_lock(&lock);
+/*
+	Given a rename command, writes the
+	parsed name to name and returns 1.
+	If the chosen name is invalid, returns
+	0 and name is altered.
 	
+	The contents of the name buffer are
+	unpredictable if 0 is returned.
+
+	The name buffer should have at least
+	MAX_NAME_LEN + 1 bytes.
+*/
+int parse_name(char *buffer, char *name){
+
+	buffer += strlen(RENAME_CMD) + 1;	/* Skips rename command */
+	memset(name, 0, (MAX_NAME_LEN + 1)*sizeof(char));
+
 	int i;
-	for (i = 0; i < current_users; i++){
-		if (clients[i]->id == client->id) break;
+	for (i = 0; i <= MAX_NAME_LEN; i++){
+		if (VALID_NAME_CHAR(buffer[i])) name[i] = buffer[i];
+		else return 0;
+		if (name[i] == '\0') break;
 	}
 
-	if (i >= current_users){
-		console_log("remove_client: Could not remove client.");
-		pthread_mutex_unlock(&lock);
-		return 0;
-	}
-
-	for (i = i; i < current_users - 1; i++){
-		clients[i] = clients[i + 1];
-	}
-
-	clients[current_users - 1] = NULL;	/* Small safety feature */
-
-	current_users--;
-	pthread_mutex_unlock(&lock);
-
-	return 1;
+	return i <= MAX_NAME_LEN;	/* If name is smaller than max, return 1. 0 otherwise */
 }
 
 
-/*
-	Sends msg to all clients that have a different
-	index than sender. To send to all clients, set
-	sender to -1.
-*/
-void send_to_clients(int sender_id, char msg[]){
-	
-	int j, status;
-	for (j = 0; j < current_users; j++){
-		if (clients[j]->id == sender_id) continue;
+int quit_command(Client *client){
 
-		status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
-		if (status < 0){
-			console_log("chat_worker: Error sending message to client");
-		}
+	const char QUIT_MSG[] = "<SERVER> /quit";
+	char msg[WHOLE_MSG_LEN];
+	int send_retries = 0;
+
+	/* Sends quit command to client */
+	int status = socket_send(client->socket, QUIT_MSG, WHOLE_MSG_LEN);
+
+	while (status < 0 && send_retries < MAX_RETRIES){
+		send_retries++;
+		console_log("interpret_command: attemtping to resend quit message to user. Attempt %d", send_retries);
+		status = socket_send(client->socket, QUIT_MSG, WHOLE_MSG_LEN);
 	}
+
+	if (send_retries < MAX_RETRIES){
+		console_log("User disconnected correctly.");
+		sprintf(msg, "<SERVER> %s disconnected.", client->username);
+		send_to_clients(client->id, msg);
+	}
+
+	return QUIT;
+}
+
+
+int ping_command(Client *client){
+
+	const char PING_MSG[] = "<SERVER> pong";
+	int send_retries = 0;
+
+	int status = socket_send(client->socket, PING_MSG, WHOLE_MSG_LEN);
+
+	while (status < 0 && send_retries < MAX_RETRIES){
+		send_retries++;
+		console_log("interpret_command: attempt %d to ping back client %s", send_retries, client->username);
+		status = socket_send(client->socket, PING_MSG, WHOLE_MSG_LEN);
+	}
+
+	if (send_retries >= MAX_RETRIES)
+		console_log("interpret_command: could not ping back user %s", client->username);
+	else
+		console_log("interpret_command: successfully pinged user %s", client->username);
+
+	return PING;
+}
+
+
+int rename_command(Client *client, char *buffer){
+	
+	int RENAME_LEN = strlen(RENAME_CMD);
+
+	if (strlen(buffer) <= RENAME_LEN || buffer[RENAME_LEN] != ' '){
+		char msg[] = "<SERVER> Rename syntax is not correct. Usage is: /nickname <new name>";
+		socket_send(client->socket, msg, WHOLE_MSG_LEN);
+		return RENAME;
+	}
+
+	/* This message gets overwritten if the rename is successful */
+	char RENAME_MSG[MAX_MSG_LEN + 64] = "<SERVER> Failed to rename. Make sure your name does not exceed the maximum character limit or contain special symbols.";
+	char new_name[MAX_NAME_LEN + 1];
+
+	int is_valid = parse_name(buffer, new_name);
+
+	if (!is_valid){
+		socket_send(client->socket, RENAME_MSG, WHOLE_MSG_LEN);
+		return RENAME;
+	}
+
+	sprintf(RENAME_MSG, "<SERVER> User %s renamed to %s", client->username, new_name);
+	strncpy(client->username, new_name, MAX_NAME_LEN + 1);
+	send_to_clients(client->id, RENAME_MSG);
+
+	return RENAME;
+}
+
+
+int invalid_command(Client *client){
+	char msg[] = "<SERVER> Invalid command. Available commands are:\n  > /ping\n  > /nickname <new name>\n  > /quit\n";
+	socket_send(client->socket, msg, MAX_MSG_LEN);
+	return NO_CMD;
 }
 
 
 /*
 	Function that interprets all available
-	commands. args is a structure that contains
-	all arguments to this function. See the
-	struct definition for a list of all fields.
+	commands.
 
 	returns an integer indicating which command
 	was interpreted.
 */
 int interpret_command(Client *client, char *buffer){
-	char msg[WHOLE_MSG_LEN];
-	int status;
 
-	const char QUIT_MSG[] = "<SERVER> /quit\n";
-
-	if (!strcmp(buffer, QUIT_CMD)){
-		/* Pings back to client */
-		status = socket_send(client->socket, QUIT_MSG, WHOLE_MSG_LEN);
-		if (status < 0){
-			console_log("interpret_command: Error sending quit message to user!");
-			return 0;
-		}
-
-		console_log("User disconnected correctly.");
-
-		sprintf(msg, "<SERVER> %s disconnected.\n", client->username);
-		send_to_clients(client->id, msg);
-
-		return QUIT;
+	if (!strncmp(buffer, QUIT_CMD, strlen(QUIT_CMD))){
+		return quit_command(client);
 	}
 
-	return NO_CMD;
+	if (!strncmp(buffer, PING_CMD, strlen(PING_CMD))){
+		return ping_command(client);
+	}
+
+	if (!strncmp(buffer, RENAME_CMD, strlen(RENAME_CMD))){
+		return rename_command(client, buffer);
+	}
+
+	return invalid_command(client);
 }
+
 
 /*
 	Thread that handles a client connection.
@@ -177,6 +321,20 @@ int interpret_command(Client *client, char *buffer){
 void *chat_worker(void *args){
 	Client *client = (Client *)args;
 
+	char nickname[MAX_MSG_LEN];
+	socket_receive(client->socket, nickname, MAX_MSG_LEN);
+
+	if (nickname[0] != '<'){
+		strncpy(client->username, nickname, MAX_NAME_LEN + 1);
+	}
+
+	char welcome_msg[3*MAX_NAME_LEN];
+	sprintf(welcome_msg, "<SERVER> %s connected to chat!", client->username);
+	send_to_clients(client->id, welcome_msg);
+
+	char HELP_MSG[] = "<SERVER> Type /help to see available commands.";
+	socket_send(client->socket, HELP_MSG, MAX_MSG_LEN);
+
 	int msg_len, command;
 	char buffer[MAX_MSG_LEN + 1] = {0};
 	char msg[WHOLE_MSG_LEN];
@@ -186,16 +344,18 @@ void *chat_worker(void *args){
 
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
+			sprintf(msg,"<SERVER> %s disconnected.", client->username);
+			send_to_clients(client->id, msg);
 			break;
 		}
 
 		if (buffer[0] == '/'){
 			command = interpret_command(client, buffer);
-			if (command == QUIT)
-				break;
+			if (command == QUIT) break;
+
 		} else {
 			/* Send regular message */
-			sprintf(msg, "<%s> %s\n", client->username, buffer);
+			sprintf(msg, "<%s> %s", client->username, buffer);
 			send_to_clients(client->id, msg);			
 		}
 	}
@@ -207,18 +367,14 @@ void *chat_worker(void *args){
 }
 
 
-int main(){
+void *accept_clients(void *args){
 
-	Socket *socket = socket_create();
-	socket_bind(socket, SERVER_PORT, SERVER_ADDR);
-	socket_listen(socket);
-
-	pthread_mutex_init(&lock, NULL);
+	Socket *socket = (Socket *)args;
 
 	unsigned int current_id = 0;
 	Client *current_client;
 	Socket *current_client_socket;
-	
+
 	do {
 		current_client_socket = socket_accept(socket);
 		current_client = client_create(current_id++, current_client_socket);
@@ -227,11 +383,30 @@ int main(){
 		pthread_create(&(current_client->thread), NULL, chat_worker, current_client);
 	} while (current_users > 0);
 
+	return NULL;
+}
+
+
+int main(){
+
+	/* Handle SIGINT */
+	struct sigaction signal;
+	signal.sa_handler = handle_interrupt;
+	sigemptyset(&(signal.sa_mask));
+	signal.sa_flags = 0;
+	sigaction(SIGINT, &signal, NULL);
+
+	Socket *socket = socket_create();
+	socket_bind(socket, SERVER_PORT, SERVER_ADDR);
+	socket_listen(socket);
+
+	pthread_mutex_init(&lock, NULL);
+	
+	pthread_t acc_daemon;
+	pthread_create(&acc_daemon, NULL, accept_clients, socket);
+
+	pthread_join(acc_daemon, NULL);
+
 	socket_free(socket);
 	return 0;
 }
-
-/*
-	Super helpful reference:
-	http://beej.us/guide/bgnet/html/
-*/

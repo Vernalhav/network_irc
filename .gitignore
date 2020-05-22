@@ -1,5 +1,10 @@
 one.txt
 test.c
+client
+server
+
+*.in
+*.out
 
 # Prerequisites
 *.d

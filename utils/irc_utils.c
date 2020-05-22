@@ -90,7 +90,8 @@ int socket_connect(Socket *socket, int port, const char *ip){
 	int status = connect(socket->sockfd, (struct sockaddr *)&(socket->address),\
 			(socklen_t)sizeof(sockaddr_in));
 
-	console_log(status == 0 ? "Socket is connected" : "ERROR CONNECTING");
+	if (status == 0) console_log("Socket is connected");
+	else console_log("ERROR CONNECTING");
 
 	return status == 0 ? 1 : -1;
 }
