@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <irc_utils.h>
 #include <regex.h>
+#include <signal.h>
 
 #define MAX_MSG_FACTOR 5
 #define BUFFER_LEN MAX_MSG_LEN*MAX_MSG_FACTOR + 16
@@ -21,6 +22,16 @@
 #define MATCH_IPV4_REGEX "([0-9]{1,3}\\.){3}[0-9]{1,3}"
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
+
+
+void help(){
+	printf("Available commands:\n  > /connect: connect to current server\n  > /server <IPv4> <port>: change connection settings\n  > /nickname <nickname>: change your nickname\n  > /quit: quit the application");
+}
+
+
+void handle_interrupt(int sig){
+	printf("\nTo quit, type /quit or use CTRL+D.\n");
+}
 
 /*
 	Parses received buffer and fills in
@@ -242,10 +253,15 @@ int change_nickname(char *cmd, char *nickname){
 	char temp_nickname[MAX_CMD_LEN + 1] = {0};
 	sscanf(cmd, "%*s %[^\n]%*c", temp_nickname);
 
+	if (temp_nickname[0] == '\0'){
+		printf("Incorrect syntax. Usage is\n  /nickname <new name>\n");
+		return 0;
+	}
+
 	int i;
 	for (i = 0; i < MAX_NAME_LEN; i++){
 		if (!VALID_NAME_CHAR(temp_nickname[i])){
-			printf("Invalid name: illegal character '%c\n'", temp_nickname[i]);	
+			printf("Invalid name: illegal character '%c'\n", temp_nickname[i]);	
 			return 0;
 		}
 		if (temp_nickname[i] == '\0') break;
@@ -256,8 +272,11 @@ int change_nickname(char *cmd, char *nickname){
 }
 
 
-int main(){
-
+/*
+	Thread responsible for client interaction
+	while not connected to any server.
+*/
+void *client_worker(){
 	/* Default connection settings */
 	char ipv4_addr[16];
 	int port = SERVER_PORT;
@@ -266,12 +285,16 @@ int main(){
 	char nickname[MAX_NAME_LEN + 1] = "<CLIENT> default";
 	char cmd[MAX_CMD_LEN + 1] = {0};
 
+	printf("Type /help to see available commands.\n");
+
 	do {
 		cmd[0] = '\0';
 		
 		printf("Current server is %s port %d\nCurrent nickname is %s\n", ipv4_addr, port, NICKNAME);
 		printf(">> ");
-		scanf("%[^\n]%*c", cmd);
+		int has_cmd = scanf("%[^\n]%*c", cmd);
+
+		if (has_cmd <= 0) break;
 
 		if (!strncmp(cmd, "/connect", 8)){
 			int status = connect_and_chat(ipv4_addr, port, nickname);
@@ -279,16 +302,43 @@ int main(){
 				printf("Could not reach server.\n");
 		}
 
-		if (!strncmp(cmd, "/server", 7)){
+		else if (!strncmp(cmd, "/server", 7)){
 			change_server(cmd, ipv4_addr, &port);
 		}
 		
-		if (!strncmp(cmd, "/nickname", 9)){
+		else if (!strncmp(cmd, "/nickname", 9)){
 			change_nickname(cmd, nickname);
 		}
+
+		else if (!strncmp(cmd, "/help", 5)){
+			help();
+		}
+
+		else if (strncmp(cmd, "/quit", 5)){
+			printf("Unrecognized command. Type /help for available commands.\n");
+		}
+
 		putchar('\n');
 
-	} while (strncmp(cmd, "/quit", 5) && cmd[0] != '\0');
+	} while (strncmp(cmd, "/quit", 5) && cmd[0] != '\0');	
+
+	return NULL;
+}
+
+
+int main(){
+
+	/* Handle SIGINT */
+	struct sigaction signal;
+	signal.sa_handler = handle_interrupt;
+	sigemptyset(&(signal.sa_mask));
+	signal.sa_flags = 0;
+	sigaction(SIGINT, &signal, NULL);
+
+	pthread_t worker;
+	pthread_create(&worker, NULL, client_worker, NULL);
+
+	pthread_join(worker, NULL);
 
 	return 0;
 }
