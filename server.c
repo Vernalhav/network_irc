@@ -114,15 +114,17 @@ void disconnect_clients(){
 	send_to_clients(-1, CLOSE_MSG);
 	char QUIT_MSG[] = "<SERVER> /quit";
 	send_to_clients(-1, QUIT_MSG);
+
+	while (current_users > 0){
+		remove_client(clients[0]);
+	}
 }
 
 
 void handle_interrupt(int sig){
-	printf("\nDisconnecting clients...\n");
-
-	disconnect_clients();
-	sleep(1);
-	exit(0);
+	if (current_users > 0){
+		printf("\nCan't terminate because users are still connected\n");
+	} else exit(0);
 }
 
 
