@@ -19,7 +19,7 @@
 #define MAX_CMD_LEN 1023
 
 #define NICKNAME nickname[0] == '<' ? "not set" : nickname
-#define MATCH_IPV4_REGEX "([0-9]{1,3}\\.){3}[0-9]{1,3}"
+#define MATCH_IPV4_REGEX "$([0-9]{1,3}\\.){3}[0-9]{1,3}^"
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
 
