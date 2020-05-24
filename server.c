@@ -319,6 +319,13 @@ int interpret_command(Client *client, char *buffer){
 	an unexpected disconnect by its client.
 */
 void *chat_worker(void *args){
+
+	/* Disable this thread from handling SIGINT */
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
 	Client *client = (Client *)args;
 
 	char nickname[MAX_MSG_LEN];
@@ -368,6 +375,12 @@ void *chat_worker(void *args){
 
 
 void *accept_clients(void *args){
+
+	/* Disable this thread from handling SIGINT */
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
 
 	Socket *socket = (Socket *)args;
 

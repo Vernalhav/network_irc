@@ -69,6 +69,12 @@ void *receive_messages(void *args){
 		them on the screen
 	*/
 
+	/* Disable this thread from handling SIGINT */
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
 	Socket *socket = (Socket *)args;
 	char buffer[WHOLE_MSG_LEN];
 	char msg_sender[MAX_NAME_LEN + 1];
@@ -79,6 +85,7 @@ void *receive_messages(void *args){
 	int received_bytes;
 	while (strcmp(msg, QUIT_CMD)){
 
+		buffer[0] = '\0';
 		received_bytes = socket_receive(socket, buffer, WHOLE_MSG_LEN);
 
 		if (strlen(buffer) == 0) continue;	/* Possible transmission mistakes */
@@ -128,6 +135,12 @@ int send_to_server(Socket *socket, const char *msg){
 /* Args must be a single Socket pointer */
 void *send_messages(void *args){
 	
+	/* Disable this thread from handling SIGINT */
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
 	Socket *socket = (Socket *)args;
 	char *msg = (char *)malloc(BUFFER_LEN*sizeof(char));
 	msg[0] = '\0';
@@ -168,6 +181,7 @@ int connect_and_chat(char *addr, int port, char *nickname){
 	int status = socket_connect(socket, port, addr);
 
 	if (status == -1){
+		console_log("Freeing socket");
 		socket_free(socket);
 		return 0;
 	}
