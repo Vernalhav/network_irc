@@ -18,7 +18,7 @@
 #define QUIT_CMD "/quit"
 #define MAX_CMD_LEN 1023
 
-#define NICKNAME nickname[0] == '<' ? "not set" : nickname
+#define NICKNAME nickname[0] == ':' ? "not set" : nickname
 #define MATCH_IPV4_REGEX "$([0-9]{1,3}\\.){3}[0-9]{1,3}^"
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
@@ -46,17 +46,11 @@ void parse_message(char *buffer, char *msg_sender, char *msg){
 	memset(msg_sender, 0, (MAX_NAME_LEN + 1)*sizeof(char));
 	memset(msg, 0, (MAX_MSG_LEN + 1)*sizeof(char));
 
-	if (buffer[0] != '<'){
-		strcpy(msg_sender, "?");
-		strncpy(msg, buffer, MAX_MSG_LEN + 1);
-		return;
-	}
-
 	int i;
-	for (i = 1; i < MAX_MSG_LEN && buffer[i] != '>'; i++){
-		msg_sender[i - 1] = buffer[i];
+	for (i = 0; i < MAX_MSG_LEN && buffer[i] != ':'; i++){
+		msg_sender[i] = buffer[i];
 	}
-	msg_sender[i-1] = '\0';
+	msg_sender[i] = '\0';
 
 	strncpy(msg, buffer + i + 2, MAX_MSG_LEN);
 }
@@ -98,7 +92,7 @@ void *receive_messages(void *args){
 		parse_message(buffer, msg_sender, msg);
 		if (!strcmp(msg_sender, "SERVER") && !strcmp(msg, QUIT_CMD)) break;
 
-		printf("<%s> %s%c", msg_sender, msg, msg[strlen(msg)-1] == '\n' ? '\0' : '\n');
+		printf("%s: %s%c", msg_sender, msg, msg[strlen(msg)-1] == '\n' ? '\0' : '\n');
 	}
 
 	console_log("Exiting receive_messages thread.");
@@ -150,7 +144,8 @@ void *send_messages(void *args){
 	int status = 1;
 	size_t max_msg_len = BUFFER_LEN;
 	ssize_t real_msg_len;
-	while (strcmp(msg, QUIT_CMD) && status > 0){
+
+	while (strncmp(msg, QUIT_CMD, 5) && status > 0){
 
 		real_msg_len = getline(&msg, &max_msg_len, stdin);
 
@@ -296,7 +291,7 @@ void *client_worker(){
 	int port = SERVER_PORT;
 	strncpy(ipv4_addr, SERVER_ADDR, 16);
 
-	char nickname[MAX_NAME_LEN + 1] = "<CLIENT> default";
+	char nickname[MAX_NAME_LEN + 1] = ":CLIENT: default";
 	char cmd[MAX_CMD_LEN + 1] = {0};
 
 	printf("Type /help to see available commands.\n");
