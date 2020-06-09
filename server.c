@@ -110,9 +110,9 @@ void send_to_clients(int sender_id, char msg[]){
 
 
 void disconnect_clients(){
-	char CLOSE_MSG[] = "<SERVER> Closing server. Terminating connection.";
+	char CLOSE_MSG[] = "SERVER: Closing server. Terminating connection.";
 	send_to_clients(-1, CLOSE_MSG);
-	char QUIT_MSG[] = "<SERVER> /quit";
+	char QUIT_MSG[] = "SERVER: /quit";
 	send_to_clients(-1, QUIT_MSG);
 
 	while (current_users > 0){
@@ -203,7 +203,7 @@ int parse_name(char *buffer, char *name){
 
 int quit_command(Client *client){
 
-	const char QUIT_MSG[] = "<SERVER> /quit";
+	const char QUIT_MSG[] = "SERVER: /quit";
 	char msg[WHOLE_MSG_LEN];
 	int send_retries = 0;
 
@@ -218,7 +218,7 @@ int quit_command(Client *client){
 
 	if (send_retries < MAX_RETRIES){
 		console_log("User disconnected correctly.");
-		sprintf(msg, "<SERVER> %s disconnected.", client->username);
+		sprintf(msg, "SERVER: %s disconnected.", client->username);
 		send_to_clients(client->id, msg);
 	}
 
@@ -228,7 +228,7 @@ int quit_command(Client *client){
 
 int ping_command(Client *client){
 
-	const char PING_MSG[] = "<SERVER> pong";
+	const char PING_MSG[] = "SERVER: pong";
 	int send_retries = 0;
 
 	int status = socket_send(client->socket, PING_MSG, WHOLE_MSG_LEN);
@@ -253,13 +253,13 @@ int rename_command(Client *client, char *buffer){
 	int RENAME_LEN = strlen(RENAME_CMD);
 
 	if (strlen(buffer) <= RENAME_LEN || buffer[RENAME_LEN] != ' '){
-		char msg[] = "<SERVER> Rename syntax is not correct. Usage is: /nickname <new name>";
+		char msg[] = "SERVER: Rename syntax is not correct. Usage is: /nickname <new name>";
 		socket_send(client->socket, msg, WHOLE_MSG_LEN);
 		return RENAME;
 	}
 
 	/* This message gets overwritten if the rename is successful */
-	char RENAME_MSG[MAX_MSG_LEN + 64] = "<SERVER> Failed to rename. Make sure your name does not exceed the maximum character limit or contain special symbols.";
+	char RENAME_MSG[MAX_MSG_LEN + 64] = "SERVER: Failed to rename. Make sure your name does not exceed the maximum character limit or contain special symbols.";
 	char new_name[MAX_NAME_LEN + 1];
 
 	int is_valid = parse_name(buffer, new_name);
@@ -269,7 +269,7 @@ int rename_command(Client *client, char *buffer){
 		return RENAME;
 	}
 
-	sprintf(RENAME_MSG, "<SERVER> User %s renamed to %s", client->username, new_name);
+	sprintf(RENAME_MSG, "SERVER: User %s renamed to %s", client->username, new_name);
 	strncpy(client->username, new_name, MAX_NAME_LEN + 1);
 	send_to_clients(client->id, RENAME_MSG);
 
@@ -278,7 +278,7 @@ int rename_command(Client *client, char *buffer){
 
 
 int invalid_command(Client *client){
-	char msg[] = "<SERVER> Invalid command. Available commands are:\n  > /ping\n  > /nickname <new name>\n  > /quit\n";
+	char msg[] = "SERVER: Invalid command. Available commands are:\n  > /ping\n  > /nickname <new name>\n  > /quit\n";
 	socket_send(client->socket, msg, MAX_MSG_LEN);
 	return NO_CMD;
 }
@@ -319,20 +319,27 @@ int interpret_command(Client *client, char *buffer){
 	an unexpected disconnect by its client.
 */
 void *chat_worker(void *args){
+
+	/* Disable this thread from handling SIGINT */
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
 	Client *client = (Client *)args;
 
 	char nickname[MAX_MSG_LEN];
 	socket_receive(client->socket, nickname, MAX_MSG_LEN);
 
-	if (nickname[0] != '<'){
+	if (nickname[0] != ':'){
 		strncpy(client->username, nickname, MAX_NAME_LEN + 1);
 	}
 
 	char welcome_msg[3*MAX_NAME_LEN];
-	sprintf(welcome_msg, "<SERVER> %s connected to chat!", client->username);
+	sprintf(welcome_msg, "SERVER: %s connected to chat!", client->username);
 	send_to_clients(client->id, welcome_msg);
 
-	char HELP_MSG[] = "<SERVER> Type /help to see available commands.";
+	char HELP_MSG[] = "SERVER: Type /help to see available commands.";
 	socket_send(client->socket, HELP_MSG, MAX_MSG_LEN);
 
 	int msg_len, command;
@@ -344,7 +351,7 @@ void *chat_worker(void *args){
 
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
-			sprintf(msg,"<SERVER> %s disconnected.", client->username);
+			sprintf(msg,"SERVER: %s disconnected.", client->username);
 			send_to_clients(client->id, msg);
 			break;
 		}
@@ -355,7 +362,7 @@ void *chat_worker(void *args){
 
 		} else {
 			/* Send regular message */
-			sprintf(msg, "<%s> %s", client->username, buffer);
+			sprintf(msg, "%s: %s", client->username, buffer);
 			send_to_clients(client->id, msg);			
 		}
 	}
@@ -368,6 +375,12 @@ void *chat_worker(void *args){
 
 
 void *accept_clients(void *args){
+
+	/* Disable this thread from handling SIGINT */
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
 
 	Socket *socket = (Socket *)args;
 

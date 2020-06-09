@@ -4,7 +4,7 @@ A C-level implementation of a chatting system. Made to consolidate networking co
 # Authors  
 Victor Giovannoni  
 Victor Graciano  
-   
+  
 # Instructions:
 This program was developed with a Linux environment in mind (particularly, Ubuntu 18, but it should work with other Linux distros).  
 It was compiled with GCC 7.5.0, but it should work with other GCC compilers because it is ANSI C compliant.  

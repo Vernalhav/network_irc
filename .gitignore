@@ -5,6 +5,7 @@ server
 
 *.in
 *.out
+*.pdf
 
 # Prerequisites
 *.d
