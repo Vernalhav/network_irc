@@ -10,7 +10,7 @@
 #define exit_error(msg) do{ perror(msg); exit(EXIT_FAILURE); }while(0)
 
 #define MAX_MSG_LEN 4096
-#define MAX_NAME_LEN 31
+#define MAX_NAME_LEN 50
 #define WHOLE_MSG_LEN MAX_MSG_LEN + MAX_NAME_LEN + 16
 
 #define LOOPBACK "127.0.0.1"
