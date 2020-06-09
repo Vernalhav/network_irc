@@ -335,6 +335,9 @@ void *chat_worker(void *args){
 		strncpy(client->username, nickname, MAX_NAME_LEN + 1);
 	}
 
+	char ip[64];
+	socket_ip(client->socket, ip);
+
 	char welcome_msg[3*MAX_NAME_LEN];
 	sprintf(welcome_msg, "SERVER: %s connected to chat!", client->username);
 	send_to_clients(client->id, welcome_msg);
