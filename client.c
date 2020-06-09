@@ -23,6 +23,8 @@
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
 
+#define IGNORE_SIGINT 0
+
 
 void help(){
 	printf("Available commands:\n  > /connect: connect to current server\n  > /server <IPv4> <port>: change connection settings\n  > /nickname <nickname>: change your nickname\n  > /quit: quit the application");
@@ -30,8 +32,10 @@ void help(){
 
 
 void handle_interrupt(int sig){
-	printf("\nTo quit, type /quit or use CTRL+D.\n");
+	if (IGNORE_SIGINT) printf("\nTo quit, type /quit or use CTRL+D.\n");
+	else exit(1);
 }
+
 
 /*
 	Parses received buffer and fills in
