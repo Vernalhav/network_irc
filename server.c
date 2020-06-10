@@ -13,11 +13,21 @@
 #define MAX_RETRIES 5
 #define N_THREADS MAX_USERS
 
+#define MAX_CHANNELS 32
+
+#define LOBBY 0
+
 #define QUIT_CMD "/quit"
 #define PING_CMD "/ping"
 #define RENAME_CMD "/nickname"
+#define JOIN_CMD "/join"
+#define KICK_CMD "/kick"
+#define MUTE_CMD "/mute"
+#define UNMUTE_CMD "/unmute"
+#define WHOIS_CMD "/whois"
 
-#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '\n')
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
+#define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
 
 
 typedef struct client {
@@ -25,18 +35,173 @@ typedef struct client {
 	int id;
 	pthread_t thread;
 	char username[MAX_NAME_LEN + 1];
+	char channel[MAX_CHANNEL_LEN];
 } Client;
 
 
+typedef struct channel {
+	int muted_users[MAX_USERS];
+	int admin;
+	int current_users;
+
+	Client *users[MAX_USERS];
+	char name[MAX_CHANNEL_LEN];
+} Channel;
+
+
 enum COMMANDS {
-	QUIT, PING, RENAME, NO_CMD
+	QUIT, PING, RENAME, JOIN, NO_CMD
 };
 
 
-pthread_mutex_t lock;
+pthread_mutex_t clients_lock;
+pthread_mutex_t channels_lock;
+
 Client *clients[MAX_USERS];
 int current_users = 0;
 
+Channel *channels[MAX_CHANNELS];
+int current_channels = 0;
+
+
+/*
+	Creates an empty channel with the given name and admin.
+	Admin should only be NULL for the initial Lobby chat.
+*/
+Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin){
+
+	Channel *c = (Channel *)malloc(sizeof(Channel));
+
+	memset(c->muted_users, -1, sizeof(c->muted_users));
+	memset(c->users, 0, sizeof(c->users));
+	strncpy(c->name, name, MAX_CHANNEL_LEN);
+	
+	c->current_users = 0;
+	c->admin = (admin == NULL) ? LOBBY : admin->id;
+
+	return c;
+}
+
+
+/* Does not free the channel's users */
+void channel_free(Channel *c){
+	free(c);
+}
+
+
+int find_channel(char channel_name[MAX_CHANNEL_LEN]){
+	int i;
+	for (i = 0; i < current_channels; i++){
+		if (!strcmp(channel_name, channels[i]->name)) return i;
+	}
+
+	return -1;
+}
+
+
+int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]){
+	int i;
+	for (i = 0; i < strlen(channel_name); i++)
+		if (!VALID_CHANNEL_CHAR(channel_name[i])) return 1;
+
+	return 0;
+}
+
+
+/*
+	Removes client from current channel.
+
+	If the client is the only one in the
+	channel, deletes the channel from the
+	list.
+	
+	Returns 0 on failure, 1 on success.
+
+	NOTE: this function uses channels_lock.
+*/
+int leave_channel(Client *client){
+	
+	pthread_mutex_lock(&channels_lock);
+	
+	int channel_index = find_channel(client->channel);
+	if (channel_index == -1){
+		console_log("Could not find channel %s", client->channel);
+		return 0;
+	}
+
+	Channel *current_channel = channels[channel_index];
+
+	int i, j;
+	for (i = 0; i < current_channel->current_users; i++){
+		if (current_channel->users[i]->id == client->id){
+			for (j = i; j < current_channel->current_users - 1; j++){
+				current_channel->users[j] = current_channel->users[j + 1];
+			}
+		}
+	}
+
+	current_channel->current_users--;
+	console_log("Channel %s has %d users", current_channel->name, current_channel->current_users);
+
+	if (current_channel->current_users == 0 && strcmp(current_channel->name, "lobby")){
+		/* Remove channel from list */
+		console_log("Removing channel %s", current_channel->name);
+		for (i = 0; i < current_channels; i++){
+			if (!strcmp(current_channel->name, channels[i]->name)){
+				for (j = i; j < current_channels - 1; j++){
+					channels[j] = channels[j + 1];
+				}
+			}
+		}
+
+		channel_free(current_channel);
+		current_channels--;
+		console_log("Current channels: %d", current_channels);
+	}
+
+	pthread_mutex_unlock(&channels_lock);
+	return 1;
+}
+
+
+/*
+	Adds client to the list of users of channel
+	with channel_name, leaving previous channel.
+
+	If no channel with the name exists, it is created
+	and client becomes its admin. If the channel
+	name is invalid, does nothing.
+
+	Returns 0 on failure, 1 on success.
+*/
+int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
+
+	if (invalid_channel_name(channel_name)) return 0;
+
+	if (!strcmp(channel_name, client->channel)) return 0;
+
+	/* Remove client from current channel, deleting it if necessary */	
+	if (strcmp(client->channel, "NO CHANNEL")) leave_channel(client);
+
+	strcpy(client->channel, channel_name);
+
+	pthread_mutex_lock(&channels_lock);
+	
+	/* Adding client to new channel, possibly creating it */
+	int channel_index = find_channel(channel_name);
+	Channel *new_channel;
+
+	if (channel_index == -1){
+		new_channel = channel_create(channel_name, client);
+		channels[current_channels++] = new_channel;
+	}
+	else new_channel = channels[channel_index];
+	
+	new_channel->users[new_channel->current_users++] = client;
+
+	pthread_mutex_unlock(&channels_lock);
+	return 1;
+}
 
 
 /*
@@ -53,7 +218,7 @@ int current_users = 0;
 	was successful.
 */
 int remove_client(Client *client){
-	pthread_mutex_lock(&lock);
+	pthread_mutex_lock(&clients_lock);
 	
 	int i;
 	for (i = 0; i < current_users; i++){
@@ -62,7 +227,7 @@ int remove_client(Client *client){
 
 	if (i >= current_users){
 		console_log("remove_client: Client not found.");
-		pthread_mutex_unlock(&lock);
+		pthread_mutex_unlock(&clients_lock);
 		return 0;
 	}
 
@@ -75,7 +240,7 @@ int remove_client(Client *client){
 	current_users--;
 	console_log("remove_client: Current users: %d", current_users);
 
-	pthread_mutex_unlock(&lock);
+	pthread_mutex_unlock(&clients_lock);
 
 	return 1;
 }
@@ -135,6 +300,7 @@ Client *client_create(int id, Socket *socket){
 	client->id = id;
 	client->socket = socket;
 	sprintf(client->username, "User %02d", id);
+	strcpy(client->channel, "NO CHANNEL");
 
 	return client;
 }
@@ -156,18 +322,18 @@ void client_free(Client *client){
 	was successful.
 */
 int add_client(Client *client){
-	pthread_mutex_lock(&lock);
+	pthread_mutex_lock(&clients_lock);
 
 	if (current_users >= MAX_USERS){
 		console_log("add_client: did not add user. Max users online.");
-		pthread_mutex_unlock(&lock);
+		pthread_mutex_unlock(&clients_lock);
 		return 0;
 	}
 	
 	clients[current_users++] = client;
 	console_log("add_client: Current users: %d", current_users);
 
-	pthread_mutex_unlock(&lock);
+	pthread_mutex_unlock(&clients_lock);
 
 	return 1;
 }
@@ -201,6 +367,19 @@ int parse_name(char *buffer, char *name){
 }
 
 
+int join_command(Client *client, char *buffer){
+
+	char channel_name[MAX_CHANNELS];
+	sscanf(buffer, "%*s %[^\n]%*c", channel_name);
+
+	console_log("Attempting to join channel %s...", channel_name);
+
+	join_channel(channel_name, client);
+
+	return JOIN;
+}
+
+
 int quit_command(Client *client){
 
 	const char QUIT_MSG[] = "SERVER: /quit";
@@ -220,6 +399,7 @@ int quit_command(Client *client){
 		console_log("User disconnected correctly.");
 		sprintf(msg, "SERVER: %s disconnected.", client->username);
 		send_to_clients(client->id, msg);
+		leave_channel(client);
 	}
 
 	return QUIT;
@@ -305,6 +485,10 @@ int interpret_command(Client *client, char *buffer){
 		return rename_command(client, buffer);
 	}
 
+	if (!strncmp(buffer, JOIN_CMD, strlen(JOIN_CMD))){
+		return join_command(client, buffer);
+	}
+
 	return invalid_command(client);
 }
 
@@ -335,6 +519,9 @@ void *chat_worker(void *args){
 		strncpy(client->username, nickname, MAX_NAME_LEN + 1);
 	}
 
+	char ip[64];
+	socket_ip(client->socket, ip);
+
 	char welcome_msg[3*MAX_NAME_LEN];
 	sprintf(welcome_msg, "SERVER: %s connected to chat!", client->username);
 	send_to_clients(client->id, welcome_msg);
@@ -353,6 +540,7 @@ void *chat_worker(void *args){
 			console_log("User disconnected unpredictably!");
 			sprintf(msg,"SERVER: %s disconnected.", client->username);
 			send_to_clients(client->id, msg);
+			leave_channel(client);
 			break;
 		}
 
@@ -362,7 +550,7 @@ void *chat_worker(void *args){
 
 		} else {
 			/* Send regular message */
-			sprintf(msg, "%s: %s", client->username, buffer);
+			sprintf(msg, "%s: (@%s) %s", client->username, client->channel, buffer);
 			send_to_clients(client->id, msg);			
 		}
 	}
@@ -384,14 +572,16 @@ void *accept_clients(void *args){
 
 	Socket *socket = (Socket *)args;
 
-	unsigned int current_id = 0;
+	unsigned int current_id = 1;
 	Client *current_client;
 	Socket *current_client_socket;
 
 	do {
 		current_client_socket = socket_accept(socket);
 		current_client = client_create(current_id++, current_client_socket);
+		
 		add_client(current_client);
+		join_channel("lobby", current_client);
 
 		pthread_create(&(current_client->thread), NULL, chat_worker, current_client);
 	} while (current_users > 0);
@@ -413,7 +603,11 @@ int main(){
 	socket_bind(socket, SERVER_PORT, SERVER_ADDR);
 	socket_listen(socket);
 
-	pthread_mutex_init(&lock, NULL);
+	pthread_mutex_init(&clients_lock, NULL);
+	pthread_mutex_init(&channels_lock, NULL);
+
+	channels[0] = channel_create("lobby", NULL);
+	current_channels = 1;
 	
 	pthread_t acc_daemon;
 	pthread_create(&acc_daemon, NULL, accept_clients, socket);

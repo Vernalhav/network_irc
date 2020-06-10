@@ -10,8 +10,9 @@
 #define exit_error(msg) do{ perror(msg); exit(EXIT_FAILURE); }while(0)
 
 #define MAX_MSG_LEN 4096
-#define MAX_NAME_LEN 31
-#define WHOLE_MSG_LEN MAX_MSG_LEN + MAX_NAME_LEN + 16
+#define MAX_NAME_LEN 50
+#define MAX_CHANNEL_LEN 200
+#define WHOLE_MSG_LEN MAX_MSG_LEN + MAX_NAME_LEN + MAX_CHANNEL_LEN + 16
 
 #define LOOPBACK "127.0.0.1"
 
@@ -19,13 +20,11 @@
 #define SERVER_ADDR "127.0.0.1"
 #define MAX_BACKLOG 6
 
-typedef struct sockaddr sockaddr;
-typedef struct sockaddr_in sockaddr_in;
 
 typedef struct socket_{
 	int sockfd;
 	socklen_t addr_size;
-	sockaddr_in address;
+	struct sockaddr_in address;
 } Socket;
 
 
@@ -112,6 +111,12 @@ int socket_receive(Socket *socket, char buffer[], int buffer_size);
 		  the SIGPIPE signal will be ignored
 */
 int socket_send(Socket *socket, const char msg[], int buffer_size);
+
+
+/*
+	Fills ipv4 buffer with the IPv4 address of socket
+*/
+void socket_ip(Socket *socket, char ipv4[32]);
 
 
 /*
