@@ -113,7 +113,7 @@ int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]){
 
 	If the client is the only one in the
 	channel, deletes the channel from the
-	list.
+	list (except for the lobby).
 	
 	Returns 0 on failure, 1 on success.
 
@@ -248,37 +248,74 @@ int remove_client(Client *client){
 
 /*
 	Sends msg to all clients that have a different
-	index than sender. To send to all clients, set
-	sender to -1.
+	ID than sender. To send to all clients on a channel, set
+	sender to -1. To send to all clients regardles of channel,
+	set channel to NULL
 */
-void send_to_clients(int sender_id, char msg[]){
+void send_to_clients(int sender_id, char msg[], char channel[]){
 	
-	int j, status;
-	for (j = 0; j < current_users; j++){
-		if (clients[j]->id == sender_id) continue;
+	int j, status, send_retries;
+	
+	if (channel == NULL){
+		for (j = 0; j < current_users; j++){
+			if (clients[j]->id == sender_id) continue;
 
-		int send_retries = 0;
-		status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
-		
-		while (status < 0 && send_retries < MAX_RETRIES){
-			send_retries++;
-			console_log("chat_worker: Error sending message to client %s. Attempt %d", clients[j]->username, send_retries);
+			send_retries = 0;
 			status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
+			
+			while (status < 0 && send_retries < MAX_RETRIES){
+				send_retries++;
+				console_log("chat_worker: Error sending message to client %s. Attempt %d", clients[j]->username, send_retries);
+				status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
+			}
+
+			if (send_retries >= MAX_RETRIES){
+				console_log("chat_worker: Client %s unresponsive. Disconnecting.", clients[j]->username);
+				remove_client(clients[j]);
+			}
+		}
+	}
+	else {
+		pthread_mutex_lock(&channels_lock);
+
+		int channel_index = find_channel(channel);
+		if (channel_index == -1){
+			console_log("Could not find channel to send.");
+			return;
 		}
 
-		if (send_retries >= MAX_RETRIES){
-			console_log("chat_worker: Client %s unresponsive. Disconnecting.", clients[j]->username);
-			remove_client(clients[j]);
+		Channel *channel = channels[channel_index];
+		pthread_mutex_unlock(&channels_lock);
+
+		for (j = 0; j < channel->current_users; j++){
+			if (channel->users[j]->id == sender_id) continue;
+
+			int send_retries = 0;
+			status = socket_send(channel->users[j]->socket, msg, WHOLE_MSG_LEN);
+			
+			while (status < 0 && send_retries < MAX_RETRIES){
+				send_retries++;
+				console_log("chat_worker: Error sending message to client %s. Attempt %d", channel->users[j]->username, send_retries);
+				status = socket_send(channel->users[j]->socket, msg, WHOLE_MSG_LEN);
+			}
+
+			if (send_retries >= MAX_RETRIES){
+				console_log("chat_worker: Client %s unresponsive. Disconnecting.", channel->users[j]->username);
+				
+				leave_channel(channel->users[j]);
+				remove_client(channel->users[j]);
+			}
 		}
+
 	}
 }
 
 
 void disconnect_clients(){
 	char CLOSE_MSG[] = "SERVER: Closing server. Terminating connection.";
-	send_to_clients(-1, CLOSE_MSG);
+	send_to_clients(-1, CLOSE_MSG, NULL);
 	char QUIT_MSG[] = "SERVER: /quit";
-	send_to_clients(-1, QUIT_MSG);
+	send_to_clients(-1, QUIT_MSG, NULL);
 
 	while (current_users > 0){
 		remove_client(clients[0]);
@@ -398,7 +435,7 @@ int quit_command(Client *client){
 	if (send_retries < MAX_RETRIES){
 		console_log("User disconnected correctly.");
 		sprintf(msg, "SERVER: %s disconnected.", client->username);
-		send_to_clients(client->id, msg);
+		send_to_clients(client->id, msg, client->channel);
 		leave_channel(client);
 	}
 
@@ -451,7 +488,7 @@ int rename_command(Client *client, char *buffer){
 
 	sprintf(RENAME_MSG, "SERVER: User %s renamed to %s", client->username, new_name);
 	strncpy(client->username, new_name, MAX_NAME_LEN + 1);
-	send_to_clients(client->id, RENAME_MSG);
+	send_to_clients(client->id, RENAME_MSG, NULL);
 
 	return RENAME;
 }
@@ -524,7 +561,7 @@ void *chat_worker(void *args){
 
 	char welcome_msg[3*MAX_NAME_LEN];
 	sprintf(welcome_msg, "SERVER: %s connected to chat!", client->username);
-	send_to_clients(client->id, welcome_msg);
+	send_to_clients(client->id, welcome_msg, NULL);
 
 	char HELP_MSG[] = "SERVER: Type /help to see available commands.";
 	socket_send(client->socket, HELP_MSG, MAX_MSG_LEN);
@@ -539,7 +576,7 @@ void *chat_worker(void *args){
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
 			sprintf(msg,"SERVER: %s disconnected.", client->username);
-			send_to_clients(client->id, msg);
+			send_to_clients(client->id, msg, NULL);
 			leave_channel(client);
 			break;
 		}
@@ -551,7 +588,7 @@ void *chat_worker(void *args){
 		} else {
 			/* Send regular message */
 			sprintf(msg, "%s: (@%s) %s", client->username, client->channel, buffer);
-			send_to_clients(client->id, msg);			
+			send_to_clients(client->id, msg, client->channel);			
 		}
 	}
 
