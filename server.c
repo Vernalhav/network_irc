@@ -21,7 +21,6 @@ int current_users = 0;
 Channel *channels[MAX_CHANNELS];
 int current_channels = 0;
 
-
 /*
 	Creates an empty channel with the given name and admin.
 	Admin should only be NULL for the initial Lobby chat.
@@ -348,6 +347,20 @@ int add_client(Client *client){
 
 
 /*
+	Given a username, return whether
+	it is unique among the connected users.
+*/
+int unique_name(char *name){
+
+	int i;
+	for (i = 0; i < current_users; i++)
+		if (!strcmp(name, clients[i]->username)) return 0;
+
+	return 1;
+}
+
+
+/*
 	Given a rename command, writes the
 	parsed name to name and returns 1.
 	If the chosen name is invalid, returns
@@ -447,10 +460,11 @@ int rename_command(Client *client, char *buffer){
 	}
 
 	/* This message gets overwritten if the rename is successful */
-	char RENAME_MSG[MAX_MSG_LEN + 64] = "SERVER: Failed to rename. Make sure your name does not exceed the maximum character limit or contain special symbols.";
+	char RENAME_MSG[MAX_MSG_LEN + 64] = "SERVER: Failed to rename. Make sure your name does not exceed the maximum character limit, contain special symbols and is unique.";
+
 	char new_name[MAX_NAME_LEN + 1];
 
-	int is_valid = parse_name(buffer, new_name);
+	int is_valid = parse_name(buffer, new_name) && unique_name(new_name);
 
 	if (!is_valid){
 		socket_send(client->socket, RENAME_MSG, WHOLE_MSG_LEN);
@@ -520,11 +534,17 @@ void *chat_worker(void *args){
 
 	Client *client = (Client *)args;
 
-	char nickname[MAX_MSG_LEN];
+	char nickname[3*MAX_NAME_LEN];
 	socket_receive(client->socket, nickname, MAX_MSG_LEN);
 
 	if (nickname[0] != ':'){
-		strncpy(client->username, nickname, MAX_NAME_LEN + 1);
+		if (unique_name(nickname)){
+			strncpy(client->username, nickname, MAX_NAME_LEN + 1);
+		} else {
+			char not_unique[MAX_MSG_LEN];
+			sprintf(not_unique, "SERVER: the username %s is already taken. Assigning default nickname %s (try /nickname)", nickname, client->username);
+			socket_send(client->socket, not_unique, MAX_MSG_LEN);
+		}
 	}
 
 	add_client(client);
