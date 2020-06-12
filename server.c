@@ -11,6 +11,20 @@
 
 #include <server.h>
 
+#define LOBBY 0
+
+#define QUIT_CMD "/quit"
+#define PING_CMD "/ping"
+#define RENAME_CMD "/nickname"
+#define JOIN_CMD "/join"
+#define KICK_CMD "/kick"
+#define MUTE_CMD "/mute"
+#define UNMUTE_CMD "/unmute"
+#define WHOIS_CMD "/whois"
+
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
+#define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
+
 
 pthread_mutex_t clients_lock;
 pthread_mutex_t channels_lock;
@@ -20,6 +34,34 @@ int current_users = 0;
 
 Channel *channels[MAX_CHANNELS];
 int current_channels = 0;
+
+
+typedef struct client {
+    Socket *socket;
+    int id;
+    pthread_t thread;
+    char username[MAX_NAME_LEN + 1];
+    char channel[MAX_CHANNEL_LEN];
+} Client;
+
+
+typedef struct channel {
+    int muted_users[MAX_USERS];
+    int current_mutes;
+
+    int admin;
+    int current_users;
+
+    Client *users[MAX_USERS];
+    char name[MAX_CHANNEL_LEN];
+} Channel;
+
+
+enum COMMANDS {
+    QUIT, PING, RENAME, JOIN, NO_CMD
+};
+
+
 
 /*
 	Creates an empty channel with the given name and admin.
@@ -34,6 +76,7 @@ Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin){
 	strncpy(c->name, name, MAX_CHANNEL_LEN);
 	
 	c->current_users = 0;
+	c->current_mutes = 0;
 	c->admin = (admin == NULL) ? LOBBY : admin->id;
 
 	return c;

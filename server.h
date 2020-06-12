@@ -8,44 +8,6 @@
 
 #define MAX_CHANNELS 32
 
-#define LOBBY 0
-
-#define QUIT_CMD "/quit"
-#define PING_CMD "/ping"
-#define RENAME_CMD "/nickname"
-#define JOIN_CMD "/join"
-#define KICK_CMD "/kick"
-#define MUTE_CMD "/mute"
-#define UNMUTE_CMD "/unmute"
-#define WHOIS_CMD "/whois"
-
-#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
-#define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
-
-
-typedef struct client {
-    Socket *socket;
-    int id;
-    pthread_t thread;
-    char username[MAX_NAME_LEN + 1];
-    char channel[MAX_CHANNEL_LEN];
-} Client;
-
-
-typedef struct channel {
-    int muted_users[MAX_USERS];
-    int admin;
-    int current_users;
-
-    Client *users[MAX_USERS];
-    char name[MAX_CHANNEL_LEN];
-} Channel;
-
-
-enum COMMANDS {
-    QUIT, PING, RENAME, JOIN, NO_CMD
-};
-
 
 Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin);
 
