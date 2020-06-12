@@ -9,49 +9,7 @@
 #include <signal.h>
 #include <pthread.h>
 
-#define MAX_USERS 5
-#define MAX_RETRIES 5
-#define N_THREADS MAX_USERS
-
-#define MAX_CHANNELS 32
-
-#define LOBBY 0
-
-#define QUIT_CMD "/quit"
-#define PING_CMD "/ping"
-#define RENAME_CMD "/nickname"
-#define JOIN_CMD "/join"
-#define KICK_CMD "/kick"
-#define MUTE_CMD "/mute"
-#define UNMUTE_CMD "/unmute"
-#define WHOIS_CMD "/whois"
-
-#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
-#define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
-
-
-typedef struct client {
-	Socket *socket;
-	int id;
-	pthread_t thread;
-	char username[MAX_NAME_LEN + 1];
-	char channel[MAX_CHANNEL_LEN];
-} Client;
-
-
-typedef struct channel {
-	int muted_users[MAX_USERS];
-	int admin;
-	int current_users;
-
-	Client *users[MAX_USERS];
-	char name[MAX_CHANNEL_LEN];
-} Channel;
-
-
-enum COMMANDS {
-	QUIT, PING, RENAME, JOIN, NO_CMD
-};
+#include <server.h>
 
 
 pthread_mutex_t clients_lock;
@@ -105,144 +63,6 @@ int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]){
 		if (!VALID_CHANNEL_CHAR(channel_name[i])) return 1;
 
 	return 0;
-}
-
-
-/*
-	Removes client from current channel.
-
-	If the client is the only one in the
-	channel, deletes the channel from the
-	list (except for the lobby).
-	
-	Returns 0 on failure, 1 on success.
-
-	NOTE: this function uses channels_lock.
-*/
-int leave_channel(Client *client){
-	
-	pthread_mutex_lock(&channels_lock);
-	
-	int channel_index = find_channel(client->channel);
-	if (channel_index == -1){
-		console_log("Could not find channel %s", client->channel);
-		return 0;
-	}
-
-	Channel *current_channel = channels[channel_index];
-
-	int i, j;
-	for (i = 0; i < current_channel->current_users; i++){
-		if (current_channel->users[i]->id == client->id){
-			for (j = i; j < current_channel->current_users - 1; j++){
-				current_channel->users[j] = current_channel->users[j + 1];
-			}
-		}
-	}
-
-	current_channel->current_users--;
-	console_log("Channel %s has %d users", current_channel->name, current_channel->current_users);
-
-	if (current_channel->current_users == 0 && strcmp(current_channel->name, "lobby")){
-		/* Remove channel from list */
-		console_log("Removing channel %s", current_channel->name);
-		for (i = 0; i < current_channels; i++){
-			if (!strcmp(current_channel->name, channels[i]->name)){
-				for (j = i; j < current_channels - 1; j++){
-					channels[j] = channels[j + 1];
-				}
-			}
-		}
-
-		channel_free(current_channel);
-		current_channels--;
-		console_log("Current channels: %d", current_channels);
-	}
-
-	pthread_mutex_unlock(&channels_lock);
-	return 1;
-}
-
-
-/*
-	Adds client to the list of users of channel
-	with channel_name, leaving previous channel.
-
-	If no channel with the name exists, it is created
-	and client becomes its admin. If the channel
-	name is invalid, does nothing.
-
-	Returns 0 on failure, 1 on success.
-*/
-int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
-
-	if (invalid_channel_name(channel_name)) return 0;
-
-	if (!strcmp(channel_name, client->channel)) return 0;
-
-	/* Remove client from current channel, deleting it if necessary */	
-	if (strcmp(client->channel, "NO CHANNEL")) leave_channel(client);
-
-	strcpy(client->channel, channel_name);
-
-	pthread_mutex_lock(&channels_lock);
-	
-	/* Adding client to new channel, possibly creating it */
-	int channel_index = find_channel(channel_name);
-	Channel *new_channel;
-
-	if (channel_index == -1){
-		new_channel = channel_create(channel_name, client);
-		channels[current_channels++] = new_channel;
-	}
-	else new_channel = channels[channel_index];
-	
-	new_channel->users[new_channel->current_users++] = client;
-
-	pthread_mutex_unlock(&channels_lock);
-	return 1;
-}
-
-
-/*
-	Removes client from the clients array.
-	The array to the left of the removed
-	client is shifted to occupy the vacant
-	position.
-	Mutex is used to prevent thread usage
-	inconsistencies.
-	Client must be freed outside this function.
-	Alters current_users value
-
-	Returns boolean whether or not the insertion
-	was successful.
-*/
-int remove_client(Client *client){
-	pthread_mutex_lock(&clients_lock);
-	
-	int i;
-	for (i = 0; i < current_users; i++){
-		if (clients[i]->id == client->id) break;
-	}
-
-	if (i >= current_users){
-		console_log("remove_client: Client not found.");
-		pthread_mutex_unlock(&clients_lock);
-		return 0;
-	}
-
-	for (i = i; i < current_users - 1; i++){
-		clients[i] = clients[i + 1];
-	}
-
-	clients[current_users - 1] = NULL;	/* Small safety feature */
-
-	current_users--;
-	console_log("remove_client: Current users: %d", current_users);
-
-	pthread_mutex_unlock(&clients_lock);
-
-	return 1;
 }
 
 
@@ -308,6 +128,157 @@ void send_to_clients(int sender_id, char msg[], char channel[]){
 		}
 
 	}
+}
+
+
+/*
+	Removes client from current channel.
+
+	If the client is the only one in the
+	channel, deletes the channel from the
+	list (except for the lobby).
+	
+	Returns 0 on failure, 1 on success.
+
+	NOTE: this function uses channels_lock.
+*/
+int leave_channel(Client *client){
+	
+	pthread_mutex_lock(&channels_lock);
+	
+	int channel_index = find_channel(client->channel);
+	if (channel_index == -1){
+		console_log("Could not find channel %s", client->channel);
+		return 0;
+	}
+
+	Channel *current_channel = channels[channel_index];
+
+	int i, j;
+	for (i = 0; i < current_channel->current_users; i++){
+		if (current_channel->users[i]->id == client->id){
+			for (j = i; j < current_channel->current_users - 1; j++){
+				current_channel->users[j] = current_channel->users[j + 1];
+			}
+		}
+	}
+
+	current_channel->current_users--;
+	console_log("Channel %s has %d users", current_channel->name, current_channel->current_users);
+
+	char leave_msg[50 + MAX_NAME_LEN];
+	sprintf(leave_msg, "SERVER: %s left the channel.", client->username);
+
+	pthread_mutex_unlock(&channels_lock);
+	send_to_clients(client->id, leave_msg, client->channel);
+	pthread_mutex_lock(&channels_lock);
+
+	if (current_channel->current_users == 0 && strcmp(current_channel->name, "lobby")){
+		/* Remove channel from list */
+		console_log("Removing channel %s", current_channel->name);
+		for (i = 0; i < current_channels; i++){
+			if (!strcmp(current_channel->name, channels[i]->name)){
+				for (j = i; j < current_channels - 1; j++){
+					channels[j] = channels[j + 1];
+				}
+			}
+		}
+
+		channel_free(current_channel);
+		current_channels--;
+		console_log("Current channels: %d", current_channels);
+	}
+
+	pthread_mutex_unlock(&channels_lock);
+	return 1;
+}
+
+
+/*
+	Adds client to the list of users of channel
+	with channel_name, leaving previous channel.
+
+	If no channel with the name exists, it is created
+	and client becomes its admin. If the channel
+	name is invalid, does nothing.
+
+	Returns 0 on failure, 1 on success.
+*/
+int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
+
+	if (invalid_channel_name(channel_name)) return 0;
+
+	if (!strcmp(channel_name, client->channel)) return 0;
+
+	/* Remove client from current channel, deleting it if necessary */	
+	if (strcmp(client->channel, "NO CHANNEL"))
+		leave_channel(client);
+
+	strcpy(client->channel, channel_name);
+
+	pthread_mutex_lock(&channels_lock);
+	
+	/* Adding client to new channel, possibly creating it */
+	int channel_index = find_channel(channel_name);
+	Channel *new_channel;
+
+	if (channel_index == -1){
+		new_channel = channel_create(channel_name, client);
+		channels[current_channels++] = new_channel;
+	}
+	else new_channel = channels[channel_index];
+	
+	new_channel->users[new_channel->current_users++] = client;
+
+	pthread_mutex_unlock(&channels_lock);
+
+	char join_msg[50 + MAX_NAME_LEN];
+	sprintf(join_msg, "SERVER: %s joined the channel.", client->username);
+	send_to_clients(-1, join_msg, client->channel);
+
+	return 1;
+}
+
+
+/*
+	Removes client from the clients array.
+	The array to the left of the removed
+	client is shifted to occupy the vacant
+	position.
+	Mutex is used to prevent thread usage
+	inconsistencies.
+	Client must be freed outside this function.
+	Alters current_users value
+
+	Returns boolean whether or not the insertion
+	was successful.
+*/
+int remove_client(Client *client){
+	pthread_mutex_lock(&clients_lock);
+	
+	int i;
+	for (i = 0; i < current_users; i++){
+		if (clients[i]->id == client->id) break;
+	}
+
+	if (i >= current_users){
+		console_log("remove_client: Client not found.");
+		pthread_mutex_unlock(&clients_lock);
+		return 0;
+	}
+
+	for (i = i; i < current_users - 1; i++){
+		clients[i] = clients[i + 1];
+	}
+
+	clients[current_users - 1] = NULL;	/* Small safety feature */
+
+	current_users--;
+	console_log("remove_client: Current users: %d", current_users);
+
+	pthread_mutex_unlock(&clients_lock);
+
+	return 1;
 }
 
 
@@ -556,6 +527,9 @@ void *chat_worker(void *args){
 		strncpy(client->username, nickname, MAX_NAME_LEN + 1);
 	}
 
+	add_client(client);
+	join_channel("lobby", client);
+
 	char ip[64];
 	socket_ip(client->socket, ip);
 
@@ -617,11 +591,8 @@ void *accept_clients(void *args){
 		current_client_socket = socket_accept(socket);
 		current_client = client_create(current_id++, current_client_socket);
 		
-		add_client(current_client);
-		join_channel("lobby", current_client);
-
 		pthread_create(&(current_client->thread), NULL, chat_worker, current_client);
-	} while (current_users > 0);
+	} while (1);
 
 	return NULL;
 }

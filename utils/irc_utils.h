@@ -16,7 +16,7 @@
 
 #define LOOPBACK "127.0.0.1"
 
-#define SERVER_PORT 8888
+#define SERVER_PORT 9003
 #define SERVER_ADDR "127.0.0.1"
 #define MAX_BACKLOG 6
 
