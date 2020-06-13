@@ -9,15 +9,19 @@
 #define MAX_CHANNELS 32
 
 
+typedef struct client Client;
+typedef struct channel Channel;
+
+
 Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin);
 
 void channel_free(Channel *c);
 
-int find_channel(char channel_name[MAX_CHANNEL_LEN]);
+Channel *find_channel(char channel_name[MAX_CHANNEL_LEN]);
 
 int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]);
 
-void send_to_clients(int sender_id, char msg[], char channel[]);
+void send_to_clients(int sender_id, char msg[], Channel *channel);
 
 int leave_channel(Client *client);
 

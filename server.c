@@ -22,7 +22,7 @@
 #define UNMUTE_CMD "/unmute"
 #define WHOIS_CMD "/whois"
 
-#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != ' ' && c != '\n')
 #define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
 
 
@@ -36,16 +36,16 @@ Channel *channels[MAX_CHANNELS];
 int current_channels = 0;
 
 
-typedef struct client {
+struct client {
     Socket *socket;
     int id;
     pthread_t thread;
     char username[MAX_NAME_LEN + 1];
-    char channel[MAX_CHANNEL_LEN];
-} Client;
+    Channel *channel;
+};
 
 
-typedef struct channel {
+struct channel {
     int muted_users[MAX_USERS];
     int current_mutes;
 
@@ -54,11 +54,11 @@ typedef struct channel {
 
     Client *users[MAX_USERS];
     char name[MAX_CHANNEL_LEN];
-} Channel;
+};
 
 
 enum COMMANDS {
-    QUIT, PING, RENAME, JOIN, NO_CMD
+    QUIT, PING, RENAME, JOIN, KICK, MUTE, UNMUTE, WHOIS, NO_CMD
 };
 
 
@@ -89,13 +89,13 @@ void channel_free(Channel *c){
 }
 
 
-int find_channel(char channel_name[MAX_CHANNEL_LEN]){
+Channel *find_channel(char channel_name[MAX_CHANNEL_LEN]){
 	int i;
 	for (i = 0; i < current_channels; i++){
-		if (!strcmp(channel_name, channels[i]->name)) return i;
+		if (!strcmp(channel_name, channels[i]->name)) return channels[i];
 	}
 
-	return -1;
+	return NULL;
 }
 
 
@@ -114,7 +114,7 @@ int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]){
 	sender to -1. To send to all clients regardles of channel,
 	set channel to NULL
 */
-void send_to_clients(int sender_id, char msg[], char channel[]){
+void send_to_clients(int sender_id, char msg[], Channel *channel){
 	
 	int j, status, send_retries;
 	
@@ -137,17 +137,8 @@ void send_to_clients(int sender_id, char msg[], char channel[]){
 			}
 		}
 	}
+
 	else {
-		pthread_mutex_lock(&channels_lock);
-
-		int channel_index = find_channel(channel);
-		if (channel_index == -1){
-			console_log("Could not find channel to send.");
-			return;
-		}
-
-		Channel *channel = channels[channel_index];
-		pthread_mutex_unlock(&channels_lock);
 
 		for (j = 0; j < channel->current_users; j++){
 			if (channel->users[j]->id == sender_id) continue;
@@ -188,13 +179,7 @@ int leave_channel(Client *client){
 	
 	pthread_mutex_lock(&channels_lock);
 	
-	int channel_index = find_channel(client->channel);
-	if (channel_index == -1){
-		console_log("Could not find channel %s", client->channel);
-		return 0;
-	}
-
-	Channel *current_channel = channels[channel_index];
+	Channel *current_channel = client->channel;
 
 	int i, j;
 	for (i = 0; i < current_channel->current_users; i++){
@@ -250,32 +235,30 @@ int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
 
 	if (invalid_channel_name(channel_name)) return 0;
 
-	if (!strcmp(channel_name, client->channel)) return 0;
+	if (client->channel != NULL &&\
+		!strcmp(channel_name, client->channel->name)) return 0;
 
 	/* Remove client from current channel, deleting it if necessary */	
-	if (strcmp(client->channel, "NO CHANNEL"))
+	if (client->channel != NULL)
 		leave_channel(client);
-
-	strcpy(client->channel, channel_name);
 
 	pthread_mutex_lock(&channels_lock);
 	
 	/* Adding client to new channel, possibly creating it */
-	int channel_index = find_channel(channel_name);
-	Channel *new_channel;
+	Channel *new_channel = find_channel(channel_name);
 
-	if (channel_index == -1){
+	if (new_channel == NULL){
 		new_channel = channel_create(channel_name, client);
 		channels[current_channels++] = new_channel;
 	}
-	else new_channel = channels[channel_index];
 	
 	new_channel->users[new_channel->current_users++] = client;
+	client->channel = new_channel;
 
 	pthread_mutex_unlock(&channels_lock);
 
-	char join_msg[50 + MAX_NAME_LEN];
-	sprintf(join_msg, "SERVER: %s joined the channel.", client->username);
+	char join_msg[50 + MAX_NAME_LEN + MAX_CHANNEL_LEN];
+	sprintf(join_msg, "SERVER: %s joined channel %s.", client->username, client->channel->name);
 	send_to_clients(-1, join_msg, client->channel);
 
 	return 1;
@@ -343,14 +326,14 @@ void handle_interrupt(int sig){
 }
 
 
-/* Creates a client with temporary username "User <id>" */
+/* Creates a client with temporary username "User <id>" and NULL channel */
 Client *client_create(int id, Socket *socket){
 	Client *client = (Client *)malloc(sizeof(Client));
 
 	client->id = id;
 	client->socket = socket;
+	client->channel = NULL;
 	sprintf(client->username, "User %02d", id);
-	strcpy(client->channel, "NO CHANNEL");
 
 	return client;
 }
@@ -431,9 +414,28 @@ int parse_name(char *buffer, char *name){
 }
 
 
+int is_admin(Client *client, Channel *channel){
+	if (channel == NULL || client == NULL) return 0;
+	return client->id == channel->admin;
+}
+
+
+int mute_command(Client *client, char *buffer){
+
+	if (!is_admin(client, client->channel)){
+
+	}
+
+	char muted_name[MAX_NAME_LEN];
+	sscanf(buffer, "%*s %[^\n]%*c", muted_name);
+
+	return MUTE;
+}
+
+
 int join_command(Client *client, char *buffer){
 
-	char channel_name[MAX_CHANNELS];
+	char channel_name[MAX_CHANNEL_LEN];
 	sscanf(buffer, "%*s %[^\n]%*c", channel_name);
 
 	console_log("Attempting to join channel %s...", channel_name);
@@ -624,7 +626,7 @@ void *chat_worker(void *args){
 
 		} else {
 			/* Send regular message */
-			sprintf(msg, "%s: (@%s) %s", client->username, client->channel, buffer);
+			sprintf(msg, "%s: (@%s) %s", client->username, client->channel->name, buffer);
 			send_to_clients(client->id, msg, client->channel);			
 		}
 	}

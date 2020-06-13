@@ -21,7 +21,7 @@
 #define NICKNAME nickname[0] == ':' ? "not set" : nickname
 #define MATCH_IPV4_REGEX "^([0-9]{1,3}\\.){3}[0-9]{1,3}$"
 
-#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != '\n')
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != ' ' && c != '\n')
 
 #define IGNORE_SIGINT 0
 
