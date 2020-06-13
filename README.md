@@ -2,6 +2,7 @@
 A C-level implementation of a chatting system. Made to consolidate networking concepts in practice.  
 
 # Authors  
+Giovani Decico Lucafó  
 Victor Giovannoni  
 Victor Graciano  
   
