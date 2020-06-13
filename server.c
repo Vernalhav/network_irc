@@ -420,14 +420,59 @@ int is_admin(Client *client, Channel *channel){
 }
 
 
+/* Given a username, return its ID, or -1 if it doesn't exist */
+int get_id(char *username){
+
+	int i;
+	for (i = 0; i < current_users; i++){
+		Client *current_client = clients[i];
+		if (!strcmp(current_client->username, username))
+			return current_client->id;
+	}
+
+	return -1;
+}
+
+
+int is_muted(int client_id, Channel *channel){
+
+	int i;
+	for (i = 0; i < channel->current_mutes; i++)
+		if (channel->muted_users[i] == client_id) return 1;
+
+	return 0;
+}
+
+
 int mute_command(Client *client, char *buffer){
 
 	if (!is_admin(client, client->channel)){
-
+		char not_admin_msg[] = "SERVER: Only admins can use this command.";
+		socket_send(client->socket, not_admin_msg, MAX_MSG_LEN);
+		return MUTE;
 	}
 
 	char muted_name[MAX_NAME_LEN];
-	sscanf(buffer, "%*s %[^\n]%*c", muted_name);
+	int status = sscanf(buffer, "%*s %[^\n]%*c", muted_name);
+
+	if (status != 1){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Try /mute <user_name>";
+		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
+		return MUTE;
+	}
+
+	int muted_client_id = get_id(muted_name);
+	if (muted_client_id == -1 || is_muted(muted_client_id, client->channel)){
+		char bad_username[] = "SERVER: Could not find user or user is already muted.";
+		socket_send(client->socket, bad_username, MAX_MSG_LEN);
+		return MUTE;		
+	}
+
+	/* Adding client to muted list */
+	pthread_mutex_lock(&channels_lock);
+	Channel *channel = client->channel;
+	channel->muted_users[channel->current_mutes++] = muted_client_id;
+	pthread_mutex_unlock(&channels_lock);
 
 	return MUTE;
 }
@@ -436,7 +481,13 @@ int mute_command(Client *client, char *buffer){
 int join_command(Client *client, char *buffer){
 
 	char channel_name[MAX_CHANNEL_LEN];
-	sscanf(buffer, "%*s %[^\n]%*c", channel_name);
+	int status = sscanf(buffer, "%*s %[^\n]%*c", channel_name);
+
+	if (status != 1){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Try /join <channel_name>";
+		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
+		return JOIN;
+	}
 
 	console_log("Attempting to join channel %s...", channel_name);
 
@@ -525,8 +576,8 @@ int rename_command(Client *client, char *buffer){
 
 
 int invalid_command(Client *client){
-	char msg[] = "SERVER: Invalid command. Available commands are:\n  > /ping\n  > /nickname <new name>\n  > /quit\n";
-	socket_send(client->socket, msg, MAX_MSG_LEN);
+	char help_msg[] = "SERVER: Invalid command. Available commands are:\n\t> /ping\n\t> /nickname <new name>\n\t> /join <channel name>\n\t> /mute <user>\n\t> /unmute <user>\n\t> /kick <user>\n\t> /quit\n";
+	socket_send(client->socket, help_msg, MAX_MSG_LEN);
 	return NO_CMD;
 }
 
@@ -554,6 +605,10 @@ int interpret_command(Client *client, char *buffer){
 
 	if (!strncmp(buffer, JOIN_CMD, strlen(JOIN_CMD))){
 		return join_command(client, buffer);
+	}
+
+	if (!strncmp(buffer, MUTE_CMD, strlen(MUTE_CMD))){
+		return mute_command(client, buffer);
 	}
 
 	return invalid_command(client);
@@ -626,8 +681,13 @@ void *chat_worker(void *args){
 
 		} else {
 			/* Send regular message */
-			sprintf(msg, "%s: (@%s) %s", client->username, client->channel->name, buffer);
-			send_to_clients(client->id, msg, client->channel);			
+			if (!is_muted(client->id, client->channel)){
+				sprintf(msg, "%s: (@%s) %s", client->username, client->channel->name, buffer);
+				send_to_clients(client->id, msg, client->channel);
+			} else {
+				sprintf(msg, "SERVER: You are currently muted on this channel.");
+				socket_send(client->socket, msg, WHOLE_MSG_LEN);
+			}
 		}
 	}
 
