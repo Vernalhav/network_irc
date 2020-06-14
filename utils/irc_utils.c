@@ -9,6 +9,9 @@
 
 #include <irc_utils.h>
 
+typedef struct sockaddr sockaddr;
+typedef struct sockaddr_in sockaddr_in;
+
 
 Socket *socket_create(){
 	/*
@@ -182,6 +185,13 @@ int socket_send(Socket *socket, const char msg[], int buffer_size){
 	}
 
 	return 1;
+}
+
+
+void socket_ip(Socket *socket, char ipv4[64]){
+	struct in_addr ip_addr = socket->address.sin_addr;
+	inet_ntop(AF_INET, &ip_addr, ipv4, 64);
+	console_log("Returning address %s", ipv4);
 }
 
 

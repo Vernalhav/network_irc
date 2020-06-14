@@ -9,10 +9,10 @@ CFLAGS=-ansi -g -Wall
 
 
 $(CLIENT_BIN) : $(CLIENT) $(LIB:.c=.o)
-	gcc $(CFLAGS) $^ -I./utils -lpthread -o $(CLIENT_BIN)
+	gcc $(CFLAGS) $^ -I./utils -I. -lpthread -o $(CLIENT_BIN)
 
 $(SERVER_BIN) : $(SERVER) $(LIB:.c=.o)
-	gcc $(CFLAGS) $^ -I./utils -lpthread -o $(SERVER_BIN)
+	gcc $(CFLAGS) $^ -I./utils -I. -lpthread -o $(SERVER_BIN)
 
 $(LIB:.c=.o) : $(LIB) $(LIB:.c=.h)
 	gcc $(CFLAGS) $< -I./utils -c -o $@
