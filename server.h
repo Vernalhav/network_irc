@@ -13,6 +13,10 @@ typedef struct client Client;
 typedef struct channel Channel;
 
 
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != ' ' && c != '\n')
+#define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
+
+
 Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin);
 
 void channel_free(Channel *c);
@@ -39,7 +43,19 @@ void client_free(Client *client);
 
 int add_client(Client *client);
 
+int unique_name(char *name);
+
 int parse_name(char *buffer, char *name);
+
+int is_admin(Client *client, Channel *channel);
+
+int get_id(char *username);
+
+int is_muted(int client_id, Channel *channel);
+
+int unmute_command(Client *client, char *buffer);
+
+int mute_command(Client *client, char *buffer);
 
 int join_command(Client *client, char *buffer);
 
