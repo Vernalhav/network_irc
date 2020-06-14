@@ -444,6 +444,47 @@ int is_muted(int client_id, Channel *channel){
 }
 
 
+int unmute_command(Client *client, char *buffer){
+
+	if (!is_admin(client, client->channel)){
+		char not_admin_msg[] = "SERVER: Only admins can use this command.";
+		socket_send(client->socket, not_admin_msg, MAX_MSG_LEN);
+		return UNMUTE;
+	}
+
+	char muted_name[MAX_NAME_LEN];
+	int status = sscanf(buffer, "%*s %[^\n]%*c", muted_name);
+
+	if (status != 1){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Try /mute <user_name>";
+		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
+		return UNMUTE;
+	}
+
+	int muted_client_id = get_id(muted_name);
+	if (muted_client_id == -1 || !is_muted(muted_client_id, client->channel)){
+		char bad_username[] = "SERVER: Could not find user or user is already unmuted.";
+		socket_send(client->socket, bad_username, MAX_MSG_LEN);
+		return UNMUTE;
+	}
+
+	/* Removing client from muted list */
+	pthread_mutex_lock(&channels_lock);
+	Channel *channel = client->channel;
+	
+	int i;
+	for (i = 0; i < channel->current_mutes && channel->muted_users[i] != muted_client_id; i++);
+	for ( ; i < channel->current_mutes - 1; i++)
+		channel->muted_users[i] = channel->muted_users[i + 1];
+
+	channel->muted_users[channel->current_mutes--] = -1;
+	pthread_mutex_unlock(&channels_lock);
+
+	return UNMUTE;
+}
+
+
+
 int mute_command(Client *client, char *buffer){
 
 	if (!is_admin(client, client->channel)){
@@ -609,6 +650,10 @@ int interpret_command(Client *client, char *buffer){
 
 	if (!strncmp(buffer, MUTE_CMD, strlen(MUTE_CMD))){
 		return mute_command(client, buffer);
+	}
+
+	if (!strncmp(buffer, UNMUTE_CMD, strlen(UNMUTE_CMD))){
+		return unmute_command(client, buffer);
 	}
 
 	return invalid_command(client);
