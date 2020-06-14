@@ -456,6 +456,44 @@ Client *get_client(int id){
 }
 
 
+int whois_command(Client *client, char *buffer){
+
+	if (!is_admin(client, client->channel)){
+		char not_admin_msg[] = "SERVER: Only admins can use this command.";
+		socket_send(client->socket, not_admin_msg, MAX_MSG_LEN);
+		return WHOIS;
+	}
+
+	char whois_name[MAX_NAME_LEN];
+	int status = sscanf(buffer, "%*s %[^\n]%*c", whois_name);
+
+	if (status != 1){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Try /whois <user_name>";
+		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
+		return WHOIS;
+	}
+
+	int whois_client_id = get_id(whois_name);
+	if (whois_client_id == -1){
+		char bad_username[] = "SERVER: Could not find user.";
+		socket_send(client->socket, bad_username, MAX_MSG_LEN);
+		return WHOIS;
+	}
+
+	char ip[65], msg[WHOLE_MSG_LEN];
+	Client *whois_client = get_client(whois_client_id);
+	
+	if (whois_client != NULL){
+		socket_ip(whois_client->socket, ip);
+
+		sprintf(msg, "SERVER: %s IP is %s", whois_client->username, ip);
+		socket_send(client->socket, msg, WHOLE_MSG_LEN);
+	}
+
+	return WHOIS;
+}
+
+
 int kick_command(Client *client, char *buffer){
 
 	if (!is_admin(client, client->channel)){
@@ -723,6 +761,10 @@ int interpret_command(Client *client, char *buffer){
 
 	if (!strncmp(buffer, KICK_CMD, strlen(KICK_CMD))){
 		return kick_command(client, buffer);
+	}
+
+	if (!strncmp(buffer, WHOIS_CMD, strlen(WHOIS_CMD))){
+		return whois_command(client, buffer);
 	}
 
 	return invalid_command(client);

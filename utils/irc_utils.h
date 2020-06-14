@@ -116,7 +116,7 @@ int socket_send(Socket *socket, const char msg[], int buffer_size);
 /*
 	Fills ipv4 buffer with the IPv4 address of socket
 */
-void socket_ip(Socket *socket, char ipv4[32]);
+void socket_ip(Socket *socket, char ipv4[65]);
 
 
 /*
