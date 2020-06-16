@@ -14,10 +14,8 @@
 #define MAX_CHANNEL_LEN 200
 #define WHOLE_MSG_LEN MAX_MSG_LEN + MAX_NAME_LEN + MAX_CHANNEL_LEN + 16
 
-#define LOOPBACK "127.0.0.1"
 
-#define SERVER_PORT 9006
-#define SERVER_ADDR "127.0.0.1"
+#define SERVER_PORT 8888
 #define MAX_BACKLOG 6
 
 
@@ -54,8 +52,7 @@ Socket *socket_create();
 	NOTE: port numbers below 1024
 		  require privileged access.
 */
-void socket_bind(Socket *socket, int port, const char *ip);
-
+void socket_bind(Socket *socket, int port, uint32_t address);
 
 /*
 	Connects socket to port/IP.

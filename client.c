@@ -18,6 +18,8 @@
 #define QUIT_CMD "/quit"
 #define MAX_CMD_LEN 1023
 
+#define SERVER_ADDR INADDR_LOOPBACK		/* Local machine */
+
 #define NICKNAME nickname[0] == ':' ? "not set" : nickname
 #define MATCH_IPV4_REGEX "^([0-9]{1,3}\\.){3}[0-9]{1,3}$"
 
@@ -291,10 +293,9 @@ int change_nickname(char *cmd, char *nickname){
 */
 void *client_worker(){
 	/* Default connection settings */
-	char ipv4_addr[16];
+	char ipv4_addr[17] = "127.0.0.1";
 	int port = SERVER_PORT;
-	strncpy(ipv4_addr, SERVER_ADDR, 16);
-
+	
 	char nickname[MAX_NAME_LEN + 1] = ":CLIENT: default";
 	char cmd[MAX_CMD_LEN + 1] = {0};
 
@@ -303,7 +304,10 @@ void *client_worker(){
 	do {
 		cmd[0] = '\0';
 		
-		printf("Current server is %s port %d\nCurrent nickname is %s\n", ipv4_addr, port, NICKNAME);
+		printf("Current server is %s port %d\nCurrent nickname is %s\n",\
+			!strcmp(ipv4_addr, "127.0.0.1") ? "local machine" : ipv4_addr,\
+			port, NICKNAME);
+		
 		printf(">> ");
 		int has_cmd = scanf("%[^\n]%*c", cmd);
 

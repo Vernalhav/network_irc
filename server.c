@@ -889,7 +889,7 @@ int main(){
 	sigaction(SIGINT, &signal, NULL);
 
 	Socket *socket = socket_create();
-	socket_bind(socket, SERVER_PORT, SERVER_ADDR);
+	socket_bind(socket, SERVER_PORT, INADDR_ANY);
 	socket_listen(socket);
 
 	pthread_mutex_init(&clients_lock, NULL);

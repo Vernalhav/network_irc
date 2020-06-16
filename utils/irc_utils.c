@@ -44,7 +44,7 @@ Socket *socket_create(){
 }
 
 
-void socket_bind(Socket *socket, int port, const char *ip){
+void socket_bind(Socket *socket, int port, uint32_t address){
 	/*
 		struct sockaddr_in;
 		
@@ -68,8 +68,8 @@ void socket_bind(Socket *socket, int port, const char *ip){
 	*/
 
 	socket->address.sin_family = AF_INET;
-	/* LOOPBACK address points to local machine */
-	socket->address.sin_addr.s_addr = inet_addr(ip != NULL ? ip : LOOPBACK);
+	socket->address.sin_addr.s_addr = htonl(address);
+	
 	socket->address.sin_port = htons(port);
 
 	/* For possible errors, see man 2 bind */
@@ -87,7 +87,7 @@ void socket_bind(Socket *socket, int port, const char *ip){
 int socket_connect(Socket *socket, int port, const char *ip){
 	
 	socket->address.sin_family = AF_INET;
-	socket->address.sin_addr.s_addr = inet_addr(ip != NULL ? ip : LOOPBACK);
+	socket->address.sin_addr.s_addr = inet_addr(ip != NULL ? ip : "127.0.0.1");
 	socket->address.sin_port = htons(port);
 	
 	int status = connect(socket->sockfd, (struct sockaddr *)&(socket->address),\
