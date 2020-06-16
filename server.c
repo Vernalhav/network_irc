@@ -21,6 +21,8 @@
 #define MUTE_CMD "/mute"
 #define UNMUTE_CMD "/unmute"
 #define WHOIS_CMD "/whois"
+#define MODE_CMD "/mode"
+#define INVITE_CMD "/invite"
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != ' ' && c != '\n')
 #define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
@@ -52,13 +54,17 @@ struct channel {
     int admin;
     int current_users;
 
+    uint8_t private;	/* Boolean 	*/
+    int current_allowed;
+    int allowed_users[MAX_USERS];
+
     Client *users[MAX_USERS];
     char name[MAX_CHANNEL_LEN];
 };
 
 
 enum COMMANDS {
-    QUIT, PING, RENAME, JOIN, KICK, MUTE, UNMUTE, WHOIS, NO_CMD
+    QUIT, PING, RENAME, JOIN, KICK, MUTE, UNMUTE, WHOIS, MODE, INVITE, NO_CMD
 };
 
 
@@ -66,6 +72,7 @@ enum COMMANDS {
 /*
 	Creates an empty channel with the given name and admin.
 	Admin should only be NULL for the initial Lobby chat.
+	The channel is set by default to be public.
 */
 Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin){
 
@@ -76,7 +83,9 @@ Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin){
 	strncpy(c->name, name, MAX_CHANNEL_LEN);
 	
 	c->current_users = 0;
+	c->current_allowed = 0;
 	c->current_mutes = 0;
+	c->private = 0;
 	c->admin = (admin == NULL) ? LOBBY : admin->id;
 
 	return c;
@@ -109,18 +118,16 @@ int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]){
 
 
 /*
-	Sends msg to all clients that have a different
-	ID than sender. To send to all clients on a channel, set
-	sender to -1. To send to all clients regardles of channel,
+	Sends msg to all clients on a channel.
+	To send to all clients regardles of channel,
 	set channel to NULL
 */
-void send_to_clients(int sender_id, char msg[], Channel *channel){
+void send_to_clients(char msg[], Channel *channel){
 	
 	int j, status, send_retries;
 	
 	if (channel == NULL){
 		for (j = 0; j < current_users; j++){
-			if (clients[j]->id == sender_id) continue;
 
 			send_retries = 0;
 			status = socket_send(clients[j]->socket, msg, WHOLE_MSG_LEN);
@@ -141,7 +148,6 @@ void send_to_clients(int sender_id, char msg[], Channel *channel){
 	else {
 
 		for (j = 0; j < channel->current_users; j++){
-			if (channel->users[j]->id == sender_id) continue;
 
 			int send_retries = 0;
 			status = socket_send(channel->users[j]->socket, msg, WHOLE_MSG_LEN);
@@ -197,7 +203,7 @@ int leave_channel(Client *client){
 	sprintf(leave_msg, "SERVER: %s left the channel.", client->username);
 
 	pthread_mutex_unlock(&channels_lock);
-	send_to_clients(client->id, leave_msg, client->channel);
+	send_to_clients(leave_msg, client->channel);
 	pthread_mutex_lock(&channels_lock);
 
 	if (current_channel->current_users == 0 && strcmp(current_channel->name, "lobby")){
@@ -238,10 +244,6 @@ int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
 	if (client->channel != NULL &&\
 		!strcmp(channel_name, client->channel->name)) return 0;
 
-	/* Remove client from current channel, deleting it if necessary */	
-	if (client->channel != NULL)
-		leave_channel(client);
-
 	pthread_mutex_lock(&channels_lock);
 	
 	/* Adding client to new channel, possibly creating it */
@@ -251,7 +253,17 @@ int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
 		new_channel = channel_create(channel_name, client);
 		channels[current_channels++] = new_channel;
 	}
+
+	/* If channel is private, must be invited to it */
+	if (new_channel->private && !is_invited(new_channel, client->id)){
+		pthread_mutex_unlock(&channels_lock);
+		return 0;
+	}
 	
+	/* Remove client from current channel, deleting it if necessary */	
+	if (client->channel != NULL)
+		leave_channel(client);
+
 	new_channel->users[new_channel->current_users++] = client;
 	client->channel = new_channel;
 
@@ -259,7 +271,7 @@ int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
 
 	char join_msg[50 + MAX_NAME_LEN + MAX_CHANNEL_LEN];
 	sprintf(join_msg, "SERVER: %s joined channel %s.", client->username, client->channel->name);
-	send_to_clients(-1, join_msg, client->channel);
+	send_to_clients(join_msg, client->channel);
 
 	return 1;
 }
@@ -309,9 +321,9 @@ int remove_client(Client *client){
 
 void disconnect_clients(){
 	char CLOSE_MSG[] = "SERVER: Closing server. Terminating connection.";
-	send_to_clients(-1, CLOSE_MSG, NULL);
+	send_to_clients(CLOSE_MSG, NULL);
 	char QUIT_MSG[] = "SERVER: /quit";
-	send_to_clients(-1, QUIT_MSG, NULL);
+	send_to_clients(QUIT_MSG, NULL);
 
 	while (current_users > 0){
 		remove_client(clients[0]);
@@ -422,7 +434,6 @@ int is_admin(Client *client, Channel *channel){
 
 /* Given a username, return its ID, or -1 if it doesn't exist */
 int get_id(char *username){
-
 	int i;
 	for (i = 0; i < current_users; i++){
 		Client *current_client = clients[i];
@@ -434,8 +445,16 @@ int get_id(char *username){
 }
 
 
-int is_muted(int client_id, Channel *channel){
+int is_invited(Channel *channel, int id){
+	int i;
+	for (i = 0; i < channel->current_allowed; i++)
+		if (channel->allowed_users[i] == id) return 1;
 
+	return 0;
+}
+
+
+int is_muted(int client_id, Channel *channel){
 	int i;
 	for (i = 0; i < channel->current_mutes; i++)
 		if (channel->muted_users[i] == client_id) return 1;
@@ -445,7 +464,6 @@ int is_muted(int client_id, Channel *channel){
 
 
 Client *get_client(int id){
-
 	int i;
 	for (i = 0; i < current_users; i++){
 		Client *current_client = clients[i];
@@ -453,6 +471,94 @@ Client *get_client(int id){
 	}
 
 	return NULL;
+}
+
+
+/* Set channel mode to either private (mode = '+'') or public (mode = '-') */
+void set_public(Channel *channel, char mode){
+	channel->private = (mode == '+') ? 1 : 0;
+}
+
+
+int invite_command(Client *client, char *buffer){
+
+	if (!is_admin(client, client->channel)){
+		char not_admin_msg[] = "SERVER: Only admins can use this command.";
+		socket_send(client->socket, not_admin_msg, MAX_MSG_LEN);
+		return INVITE;
+	}
+
+	if (!client->channel->private){
+		char bad_mode[] = "SERVER: Command unavailable to public channels.";
+		socket_send(client->socket, bad_mode, MAX_MSG_LEN);
+		return INVITE;
+	}
+
+	char invited_user[MAX_NAME_LEN];
+	int status = sscanf(buffer, "%*s %[^\n]%*c", invited_user);
+
+	if (status != 1){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Usage is /invite <username>";
+		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
+		return INVITE;
+	}
+
+	int invited_user_id = get_id(invited_user);
+	if (invited_user_id == -1){
+		char bad_username[] = "SERVER: Could not find user.";
+		socket_send(client->socket, bad_username, MAX_MSG_LEN);
+		return INVITE;
+	}
+
+	if (is_invited(client->channel, invited_user_id)){
+		char bad_username[] = "SERVER: User is already invited.";
+		socket_send(client->socket, bad_username, MAX_MSG_LEN);
+		return INVITE;
+	}
+
+	client->channel->allowed_users[client->channel->current_allowed++] = invited_user_id;
+
+	Client *invited_client = get_client(invited_user_id);
+	if (invited_client != NULL){
+		char invite_msg[MAX_NAME_LEN + 2*MAX_CHANNEL_LEN + 64];
+		sprintf(invite_msg, "SERVER: %s has invited you to channel %s. Join with /join %s.",\
+			client->username, client->channel->name, client->channel->name);
+		
+		socket_send(invited_client->socket, invite_msg, MAX_NAME_LEN + MAX_CHANNEL_LEN + 64);
+	}
+
+	return INVITE;
+}
+
+
+int mode_command(Client *client, char *buffer){
+
+	if (!is_admin(client, client->channel)){
+		char not_admin_msg[] = "SERVER: Only admins can use this command.";
+		socket_send(client->socket, not_admin_msg, MAX_MSG_LEN);
+		return MODE;
+	}
+
+	char modes[MAX_MSG_LEN];
+	int status = sscanf(buffer, "%*s %s", modes);
+
+	if (status == 0 || modes[0] != '+' || modes[0] != '-'){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Try /modes (+|-)<modes>";
+		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
+		return MODE;
+	}
+
+	int i;
+	for (i = 1; i < strlen(modes); i++){
+		switch (modes[i]){
+			case 'i':
+			set_public(client->channel, modes[0]);
+			break;
+		}
+	}
+
+
+	return MODE;
 }
 
 
@@ -659,7 +765,7 @@ int quit_command(Client *client){
 	if (send_retries < MAX_RETRIES){
 		console_log("User disconnected correctly.");
 		sprintf(msg, "SERVER: %s disconnected.", client->username);
-		send_to_clients(client->id, msg, client->channel);
+		send_to_clients(msg, client->channel);
 		leave_channel(client);
 	}
 
@@ -713,7 +819,7 @@ int rename_command(Client *client, char *buffer){
 
 	sprintf(RENAME_MSG, "SERVER: User %s renamed to %s", client->username, new_name);
 	strncpy(client->username, new_name, MAX_NAME_LEN + 1);
-	send_to_clients(client->id, RENAME_MSG, NULL);
+	send_to_clients(RENAME_MSG, NULL);
 
 	return RENAME;
 }
@@ -767,6 +873,14 @@ int interpret_command(Client *client, char *buffer){
 		return whois_command(client, buffer);
 	}
 
+	if (!strncmp(buffer, MODE_CMD, strlen(MODE_CMD))){
+		return mode_command(client, buffer);
+	}
+
+	if (!strncmp(buffer, INVITE_CMD, strlen(INVITE_CMD))){
+		return invite_command(client, buffer);
+	}
+
 	return invalid_command(client);
 }
 
@@ -811,7 +925,7 @@ void *chat_worker(void *args){
 
 	char welcome_msg[3*MAX_NAME_LEN];
 	sprintf(welcome_msg, "SERVER: %s connected to chat!", client->username);
-	send_to_clients(client->id, welcome_msg, NULL);
+	send_to_clients(welcome_msg, NULL);
 
 	char HELP_MSG[] = "SERVER: Type /help to see available commands.";
 	socket_send(client->socket, HELP_MSG, MAX_MSG_LEN);
@@ -826,7 +940,7 @@ void *chat_worker(void *args){
 		if (msg_len <= 0){
 			console_log("User disconnected unpredictably!");
 			sprintf(msg,"SERVER: %s disconnected.", client->username);
-			send_to_clients(client->id, msg, NULL);
+			send_to_clients(msg, NULL);
 			leave_channel(client);
 			break;
 		}
@@ -839,7 +953,7 @@ void *chat_worker(void *args){
 			/* Send regular message */
 			if (!is_muted(client->id, client->channel)){
 				sprintf(msg, "%s: (@%s) %s", client->username, client->channel->name, buffer);
-				send_to_clients(client->id, msg, client->channel);
+				send_to_clients(msg, client->channel);
 			} else {
 				sprintf(msg, "SERVER: You are currently muted on this channel.");
 				socket_send(client->socket, msg, WHOLE_MSG_LEN);
