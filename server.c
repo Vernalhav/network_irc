@@ -833,7 +833,7 @@ int rename_command(Client *client, char *buffer){
 
 
 int invalid_command(Client *client){
-	char help_msg[] = "SERVER: Invalid command. Available commands are:\n\t> /ping\n\t> /nickname <new name>\n\t> /join <channel name>\n\t> /mute <user>\n\t> /unmute <user>\n\t> /kick <user>\n\t> /whois <user>\n\t> /quit\n";
+	char help_msg[] = "SERVER: Invalid command. Available commands are:\n\t> /ping\n\t> /nickname <new name>\n\t> /join <channel name>\n\t> /mute <user>\n\t> /unmute <user>\n\t> /kick <user>\n\t> /whois <user>\n\t/mode (+|-)<modes>\n\t/invite <user>\n\t> /quit\n";
 	socket_send(client->socket, help_msg, MAX_MSG_LEN);
 	return NO_CMD;
 }
