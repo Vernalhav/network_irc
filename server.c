@@ -83,10 +83,12 @@ Channel *channel_create(char name[MAX_CHANNEL_LEN], Client *admin){
 	strncpy(c->name, name, MAX_CHANNEL_LEN);
 	
 	c->current_users = 0;
-	c->current_allowed = 0;
+	c->current_allowed = 1;
 	c->current_mutes = 0;
 	c->private = 0;
 	c->admin = (admin == NULL) ? LOBBY : admin->id;
+
+	if (admin != NULL) c->allowed_users[0] = admin->id;
 
 	return c;
 }
@@ -257,17 +259,22 @@ int join_channel(char channel_name[MAX_CHANNEL_LEN], Client *client){
 	/* If channel is private, must be invited to it */
 	if (new_channel->private && !is_invited(new_channel, client->id)){
 		pthread_mutex_unlock(&channels_lock);
+
+		char invite_msg[] = "SERVER: You are not invited to this channel";
+		socket_send(client->socket, invite_msg, MAX_MSG_LEN);
+
 		return 0;
 	}
 	
+	new_channel->users[new_channel->current_users++] = client;
+
+	pthread_mutex_unlock(&channels_lock);
+
 	/* Remove client from current channel, deleting it if necessary */	
 	if (client->channel != NULL)
 		leave_channel(client);
 
-	new_channel->users[new_channel->current_users++] = client;
 	client->channel = new_channel;
-
-	pthread_mutex_unlock(&channels_lock);
 
 	char join_msg[50 + MAX_NAME_LEN + MAX_CHANNEL_LEN];
 	sprintf(join_msg, "SERVER: %s joined channel %s.", client->username, client->channel->name);
@@ -539,11 +546,11 @@ int mode_command(Client *client, char *buffer){
 		return MODE;
 	}
 
-	char modes[MAX_MSG_LEN];
+	char modes[MAX_MSG_LEN] = "";
 	int status = sscanf(buffer, "%*s %s", modes);
 
-	if (status == 0 || modes[0] != '+' || modes[0] != '-'){
-		char bad_syntax[] = "SERVER: Incorrect syntax. Try /modes (+|-)<modes>";
+	if (status == 0 || (modes[0] != '+' && modes[0] != '-')){
+		char bad_syntax[] = "SERVER: Incorrect syntax. Try /mode (+|-)<modes>";
 		socket_send(client->socket, bad_syntax, MAX_MSG_LEN);
 		return MODE;
 	}
