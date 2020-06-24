@@ -2,16 +2,17 @@
 
 #define SERVER_H
 
-#define MAX_USERS 5
+#define MAX_USERS 32
 #define MAX_RETRIES 5
 #define N_THREADS MAX_USERS
 
 #define MAX_CHANNELS 32
 
-
 typedef struct client Client;
 typedef struct channel Channel;
 
+#define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != ' ' && c != '\n')
+#define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
 
 #define VALID_NAME_CHAR(c) (c != '<' && c != '>' && c != ':' && c != '@' && c != ' ' && c != '\n')
 #define VALID_CHANNEL_CHAR(c) (c != ' ' && c != ',' && c != 7)
@@ -25,7 +26,7 @@ Channel *find_channel(char channel_name[MAX_CHANNEL_LEN]);
 
 int invalid_channel_name(char channel_name[MAX_CHANNEL_LEN]);
 
-void send_to_clients(int sender_id, char msg[], Channel *channel);
+void send_to_clients(char msg[], Channel *channel);
 
 int leave_channel(Client *client);
 
@@ -51,7 +52,21 @@ int is_admin(Client *client, Channel *channel);
 
 int get_id(char *username);
 
+int is_invited(Channel *channel, int id);
+
 int is_muted(int client_id, Channel *channel);
+
+Client *get_client(int id);
+
+void set_public(Channel *channel, char mode);
+
+int invite_command(Client *client, char *buffer);
+
+int mode_command(Client *client, char *buffer);
+
+int whois_command(Client *client, char *buffer);
+
+int kick_command(Client *client, char *buffer);
 
 int unmute_command(Client *client, char *buffer);
 
